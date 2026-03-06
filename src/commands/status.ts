@@ -12,7 +12,10 @@ import {
 import { config } from "../lib/config.js";
 import { formatStatus, formatInsights, formatError } from "../lib/formatter.js";
 
-export async function statusCommand(projectName?: string): Promise<void> {
+export async function statusCommand(
+  projectName?: string,
+  jsonOutput?: boolean
+): Promise<void> {
   const spinner = ora("Loading...").start();
 
   try {
@@ -89,6 +92,32 @@ export async function statusCommand(projectName?: string): Promise<void> {
     ]);
 
     spinner.stop();
+
+    if (jsonOutput) {
+      const output = {
+        project: {
+          id: project.id,
+          name: project.name,
+          domain: project.domain,
+        },
+        gsc: {
+          current: gscWoW.current,
+          previous: gscWoW.previous,
+          delta: gscWoW.delta,
+        },
+        ga4: {
+          current: ga4WoW.current,
+          previous: ga4WoW.previous,
+          delta: ga4WoW.delta,
+        },
+        geo,
+        rankings,
+        insights,
+        topKeywords,
+      };
+      process.stdout.write(JSON.stringify(output, null, 2) + "\n");
+      return;
+    }
 
     console.log(formatStatus(project, gscWoW, ga4WoW, geo, rankings, topKeywords));
 

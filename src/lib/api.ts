@@ -518,3 +518,63 @@ export async function fetchInsights(
     throw new Error(`Network error fetching insights: ${String(err)}`);
   }
 }
+
+// ---- CRO ----
+
+export interface CROAudit {
+  id: string;
+  project_id: string;
+  status: string;
+  created_at: string;
+  findings: unknown;
+  score: number | null;
+}
+
+export interface CRODeliverable {
+  id: string;
+  project_id: string;
+  title: string;
+  status: string;
+  priority: string;
+  created_at: string;
+}
+
+export async function fetchCROAudits(
+  projectId: string,
+  limit: number = 3
+): Promise<CROAudit[]> {
+  try {
+    const sb = await getClient();
+    const { data, error } = await sb
+      .from("cro_audits")
+      .select("id, project_id, status, created_at, findings, score")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) throw new Error(`CRO audits query failed: ${error.message}`);
+    return (data ?? []) as CROAudit[];
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error(`Network error fetching CRO audits: ${String(err)}`);
+  }
+}
+
+export async function fetchCRODeliverables(
+  projectId: string
+): Promise<CRODeliverable[]> {
+  try {
+    const sb = await getClient();
+    const { data, error } = await sb
+      .from("cro_deliverables")
+      .select("id, project_id, title, status, priority, created_at")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(`CRO deliverables query failed: ${error.message}`);
+    return (data ?? []) as CRODeliverable[];
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error(`Network error fetching CRO deliverables: ${String(err)}`);
+  }
+}

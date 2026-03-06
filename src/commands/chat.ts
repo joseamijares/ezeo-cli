@@ -167,6 +167,18 @@ async function handleIntent(intent: Intent): Promise<string | null> {
       );
     }
 
+    case "cro": {
+      return formatChatResponse(
+        `Run 'ezeo cro${intent.project ? " " + intent.project : ""}' for CRO audit details and pending deliverables.`
+      );
+    }
+
+    case "image": {
+      return formatChatResponse(
+        "Image generation coming soon. Will support: product photos, blog images, social media graphics."
+      );
+    }
+
     case "unknown":
       return formatChatResponse(
         `I don't understand "${intent.raw}" yet. Type 'help' to see what I can do.`

@@ -12,6 +12,8 @@ export type Intent =
   | { type: "keywords"; project?: string }
   | { type: "competitors"; project?: string }
   | { type: "audit"; url?: string }
+  | { type: "cro"; project?: string }
+  | { type: "image"; description?: string }
   | { type: "projects" }
   | { type: "help" }
   | { type: "exit" }
@@ -35,6 +37,16 @@ const patterns: Array<{
   {
     regex: /^(projects?|list projects?|show projects?)$/i,
     extract: () => ({ type: "projects" }),
+  },
+  // CRO / Conversion
+  {
+    regex: /^(?:cro|conversion|optimization|audit\s+results?)(?:\s+(?:for\s+)?(.+))?$/i,
+    extract: (m) => ({ type: "cro", project: m[1]?.trim() }),
+  },
+  // Image generation
+  {
+    regex: /^(?:image|generate\s+image|create\s+image|photo)(?:\s+(.+))?$/i,
+    extract: (m) => ({ type: "image", description: m[1]?.trim() }),
   },
   // Status - generic
   {
