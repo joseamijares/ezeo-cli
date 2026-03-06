@@ -79,13 +79,16 @@ Examples:
 program
   .command("login")
   .description("Authenticate with your Ezeo account")
+  .option("--email <email>", "Email address (skip prompt)")
+  .option("--password <password>", "Password (skip prompt)")
   .addHelpText(
     "after",
     `
 Examples:
-  ezeo login               # Interactive login prompt`
+  ezeo login                                    # Interactive login prompt
+  ezeo login --email user@co.com --password pw  # Non-interactive`
   )
-  .action(loginCommand);
+  .action((opts: { email?: string; password?: string }) => loginCommand(opts));
 
 program
   .command("logout")

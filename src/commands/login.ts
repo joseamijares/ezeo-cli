@@ -6,27 +6,34 @@ import { saveCredentials, config } from "../lib/config.js";
 import { formatProjectList, logo } from "../lib/formatter.js";
 import { initProjectMemory, getSoul } from "../lib/memory.js";
 
-export async function loginCommand(): Promise<void> {
+export async function loginCommand(opts?: { email?: string; password?: string }): Promise<void> {
   console.log();
   console.log(logo());
   console.log();
 
-  const answers = await inquirer.prompt([
-    {
-      type: "input",
-      name: "email",
-      message: "Email:",
-      validate: (v: string) =>
-        v.includes("@") ? true : "Enter a valid email",
-    },
-    {
-      type: "password",
-      name: "password",
-      message: "Password:",
-      mask: "*",
-      validate: (v: string) => (v.length > 0 ? true : "Password is required"),
-    },
-  ]);
+  let answers: { email: string; password: string };
+
+  if (opts?.email && opts?.password) {
+    answers = { email: opts.email, password: opts.password };
+  } else {
+    answers = await inquirer.prompt([
+      {
+        type: "input",
+        name: "email",
+        message: "Email:",
+        default: opts?.email,
+        validate: (v: string) =>
+          v.includes("@") ? true : "Enter a valid email",
+      },
+      {
+        type: "password",
+        name: "password",
+        message: "Password:",
+        mask: "*",
+        validate: (v: string) => (v.length > 0 ? true : "Password is required"),
+      },
+    ]);
+  }
 
   const spinner = ora("Authenticating...").start();
 

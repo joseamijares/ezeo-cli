@@ -203,6 +203,13 @@ export function formatStatus(
   return lines.join("\n");
 }
 
+function truncate(str: string, maxLen: number): string {
+  if (!str) return "";
+  const singleLine = str.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+  if (singleLine.length <= maxLen) return singleLine;
+  return singleLine.slice(0, maxLen - 3) + "...";
+}
+
 export function formatInsights(insights: Insight[]): string {
   if (insights.length === 0) return chalk.gray("  No recent insights.");
 
@@ -211,9 +218,9 @@ export function formatInsights(insights: Insight[]): string {
   for (const insight of insights) {
     const icon = severityIcon(insight.severity);
     const age = timeAgo(new Date(insight.created_at));
-    lines.push(`  ${icon} ${chalk.white.bold(insight.title)} ${chalk.gray(`(${age})`)}`);
+    lines.push(`  ${icon} ${chalk.white.bold(truncate(insight.title, 60))} ${chalk.gray(`(${age})`)}`);
     if (insight.summary) {
-      lines.push(`    ${chalk.gray(insight.summary)}`);
+      lines.push(`    ${chalk.gray(truncate(insight.summary, 100))}`);
     }
     lines.push("");
   }

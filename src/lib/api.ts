@@ -80,10 +80,19 @@ export async function fetchProjects(): Promise<Project[]> {
     const sb = await getClient();
     const { data, error } = await sb
       .from("projects")
-      .select("id, name, domain, created_at, google_analytics_connected, search_console_connected, shopify_connected")
+      .select("id, name, domain, created_at, ga_property_id, gsc_site_url, shopify_shop_domain, status")
+      .eq("status", "active")
       .order("name");
     if (error) throw new Error(`Failed to fetch projects: ${error.message}`);
-    return (data ?? []) as Project[];
+    return (data ?? []).map((p: Record<string, unknown>) => ({
+      id: p.id as string,
+      name: p.name as string,
+      domain: (p.domain as string) ?? "",
+      created_at: p.created_at as string,
+      google_analytics_connected: !!(p.ga_property_id),
+      search_console_connected: !!(p.gsc_site_url),
+      shopify_connected: !!(p.shopify_shop_domain),
+    }));
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error(`Network error fetching projects: ${String(err)}`);
@@ -109,7 +118,7 @@ export async function fetchGSCMetrics(
 
     const { data, error } = await sb
       .from("search_console_data")
-      .select("clicks, impressions, ctr, position")
+      .select("clicks, impressions, ctr, average_position")
       .eq("project_id", projectId)
       .gte("date", since.toISOString().split("T")[0]);
 
@@ -122,17 +131,18 @@ export async function fetchGSCMetrics(
       (acc, row) => ({
         clicks: acc.clicks + (row.clicks ?? 0),
         impressions: acc.impressions + (row.impressions ?? 0),
-        ctr: acc.ctr + (row.ctr ?? 0),
-        position: acc.position + (row.position ?? 0),
+        position: acc.position + (row.average_position ?? 0),
       }),
-      { clicks: 0, impressions: 0, ctr: 0, position: 0 }
+      { clicks: 0, impressions: 0, position: 0 }
     );
 
     const count = data.length;
+    // CTR = total clicks / total impressions (not average of per-row CTRs)
+    const ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
     return {
       clicks: totals.clicks,
       impressions: totals.impressions,
-      ctr: count > 0 ? totals.ctr / count : 0,
+      ctr,
       position: count > 0 ? totals.position / count : 0,
       hasData: true,
     };
@@ -210,7 +220,7 @@ async function fetchGSCMetricsPeriod(
 
     const { data, error } = await sb
       .from("search_console_data")
-      .select("clicks, impressions, ctr, position")
+      .select("clicks, impressions, ctr, average_position")
       .eq("project_id", projectId)
       .gte("date", start.toISOString().split("T")[0])
       .lt("date", end.toISOString().split("T")[0]);
@@ -224,17 +234,17 @@ async function fetchGSCMetricsPeriod(
       (acc, row) => ({
         clicks: acc.clicks + (row.clicks ?? 0),
         impressions: acc.impressions + (row.impressions ?? 0),
-        ctr: acc.ctr + (row.ctr ?? 0),
-        position: acc.position + (row.position ?? 0),
+        position: acc.position + (row.average_position ?? 0),
       }),
-      { clicks: 0, impressions: 0, ctr: 0, position: 0 }
+      { clicks: 0, impressions: 0, position: 0 }
     );
 
     const count = data.length;
+    const ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
     return {
       clicks: totals.clicks,
       impressions: totals.impressions,
-      ctr: count > 0 ? totals.ctr / count : 0,
+      ctr,
       position: count > 0 ? totals.position / count : 0,
       hasData: true,
     };
@@ -262,7 +272,7 @@ export async function fetchGA4Metrics(
 
     const { data, error } = await sb
       .from("analytics_data")
-      .select("sessions, active_users, bounce_rate")
+      .select("metrics")
       .eq("project_id", projectId)
       .gte("date", since.toISOString().split("T")[0]);
 
@@ -272,19 +282,21 @@ export async function fetchGA4Metrics(
     }
 
     const totals = data.reduce(
-      (acc, row) => ({
-        sessions: acc.sessions + (row.sessions ?? 0),
-        users: acc.users + (row.active_users ?? 0),
-        bounceRate: acc.bounceRate + (row.bounce_rate ?? 0),
-      }),
-      { sessions: 0, users: 0, bounceRate: 0 }
+      (acc, row) => {
+        const m = (row.metrics ?? {}) as Record<string, number>;
+        return {
+          sessions: acc.sessions + (m.sessions ?? 0),
+          bounceRate: acc.bounceRate + (m.bounceRate ?? 0),
+          count: acc.count + 1,
+        };
+      },
+      { sessions: 0, bounceRate: 0, count: 0 }
     );
 
-    const count = data.length;
     return {
       sessions: totals.sessions,
-      users: totals.users,
-      bounceRate: count > 0 ? totals.bounceRate / count : 0,
+      users: totals.sessions, // analytics_data doesn't have a separate users column; approximate with sessions
+      bounceRate: totals.count > 0 ? totals.bounceRate / totals.count : 0,
       hasData: true,
     };
   } catch (err) {
@@ -308,7 +320,7 @@ async function fetchGA4MetricsPeriod(
 
     const { data, error } = await sb
       .from("analytics_data")
-      .select("sessions, active_users, bounce_rate")
+      .select("metrics")
       .eq("project_id", projectId)
       .gte("date", start.toISOString().split("T")[0])
       .lt("date", end.toISOString().split("T")[0]);
@@ -319,19 +331,21 @@ async function fetchGA4MetricsPeriod(
     }
 
     const totals = data.reduce(
-      (acc, row) => ({
-        sessions: acc.sessions + (row.sessions ?? 0),
-        users: acc.users + (row.active_users ?? 0),
-        bounceRate: acc.bounceRate + (row.bounce_rate ?? 0),
-      }),
-      { sessions: 0, users: 0, bounceRate: 0 }
+      (acc, row) => {
+        const m = (row.metrics ?? {}) as Record<string, number>;
+        return {
+          sessions: acc.sessions + (m.sessions ?? 0),
+          bounceRate: acc.bounceRate + (m.bounceRate ?? 0),
+          count: acc.count + 1,
+        };
+      },
+      { sessions: 0, bounceRate: 0, count: 0 }
     );
 
-    const count = data.length;
     return {
       sessions: totals.sessions,
-      users: totals.users,
-      bounceRate: count > 0 ? totals.bounceRate / count : 0,
+      users: totals.sessions,
+      bounceRate: totals.count > 0 ? totals.bounceRate / totals.count : 0,
       hasData: true,
     };
   } catch (err) {
@@ -374,28 +388,67 @@ export async function fetchTopKeywords(
   try {
     const sb = await getClient();
 
-    const { data, error } = await sb
-      .from("keyword_rankings")
-      .select("keyword, position, previous_position")
-      .eq("project_id", projectId)
-      .not("position", "is", null)
-      .order("position", { ascending: true })
-      .limit(limit);
-
-    if (error) throw new Error(`Top keywords query failed: ${error.message}`);
-    if (!data || data.length === 0) return [];
-
-    return data.map((row) => {
-      const pos = row.position as number;
-      const prev = row.previous_position != null ? (row.previous_position as number) : null;
-      const change = prev != null ? pos - prev : null; // negative = moved up (good)
-      return {
-        keyword: row.keyword as string,
-        position: pos,
-        previousPosition: prev,
-        change,
-      };
+    // Get latest ranking per keyword via rankings table (joined through keywords)
+    // Use RPC or raw query approach: get keywords with their latest ranking
+    const { data, error } = await sb.rpc("get_top_keywords", {
+      p_project_id: projectId,
+      p_limit: limit,
     });
+
+    if (!error && data && data.length > 0) {
+      return data.map((row: Record<string, unknown>) => ({
+        keyword: row.keyword as string,
+        position: row.position as number,
+        previousPosition: (row.previous_position as number) ?? null,
+        change: row.previous_position != null
+          ? (row.position as number) - (row.previous_position as number)
+          : null,
+      }));
+    }
+
+    // Fallback: manual join via two queries
+    const { data: keywords, error: kwErr } = await sb
+      .from("keywords")
+      .select("id, keyword")
+      .eq("project_id", projectId)
+      .limit(100);
+
+    if (kwErr || !keywords || keywords.length === 0) return [];
+
+    const keywordIds = keywords.map((k) => k.id as string);
+    const { data: rankings, error: rkErr } = await sb
+      .from("rankings")
+      .select("keyword_id, position, check_date")
+      .in("keyword_id", keywordIds)
+      .not("position", "is", null)
+      .order("check_date", { ascending: false });
+
+    if (rkErr || !rankings || rankings.length === 0) return [];
+
+    // Get latest position per keyword
+    const latestByKeyword = new Map<string, { position: number; check_date: string }>();
+    for (const r of rankings) {
+      const kid = r.keyword_id as string;
+      if (!latestByKeyword.has(kid)) {
+        latestByKeyword.set(kid, { position: r.position as number, check_date: r.check_date as string });
+      }
+    }
+
+    // Build keyword map
+    const kwMap = new Map(keywords.map((k) => [k.id as string, k.keyword as string]));
+
+    // Sort by position and take top N
+    const results = Array.from(latestByKeyword.entries())
+      .map(([kid, { position }]) => ({
+        keyword: kwMap.get(kid) ?? "unknown",
+        position,
+        previousPosition: null as number | null,
+        change: null as number | null,
+      }))
+      .sort((a, b) => a.position - b.position)
+      .slice(0, limit);
+
+    return results;
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error(`Network error fetching top keywords: ${String(err)}`);
@@ -420,29 +473,29 @@ export async function fetchGEOMetrics(
 
     const { data, error } = await sb
       .from("ai_platform_citations")
-      .select("platform, is_cited, checked_at")
+      .select("platform, cited, created_at")
       .eq("project_id", projectId)
-      .gte("checked_at", since.toISOString());
+      .gte("created_at", since.toISOString());
 
     if (error) throw new Error(`GEO query failed: ${error.message}`);
     if (!data || data.length === 0)
       return { totalCitations: 0, platforms: {}, citationRate: 0, hasData: false };
 
     const platforms: Record<string, number> = {};
-    let cited = 0;
+    let citedCount = 0;
 
     for (const row of data) {
-      if (row.is_cited) {
-        cited++;
-        const p = row.platform ?? "unknown";
+      if (row.cited) {
+        citedCount++;
+        const p = (row.platform as string) ?? "unknown";
         platforms[p] = (platforms[p] ?? 0) + 1;
       }
     }
 
     return {
-      totalCitations: cited,
+      totalCitations: citedCount,
       platforms,
-      citationRate: data.length > 0 ? (cited / data.length) * 100 : 0,
+      citationRate: data.length > 0 ? (citedCount / data.length) * 100 : 0,
       hasData: true,
     };
   } catch (err) {
@@ -464,24 +517,42 @@ export async function fetchRankingsSummary(
   try {
     const sb = await getClient();
 
-    const { data, error } = await sb
-      .from("keyword_rankings")
-      .select("position")
+    // Get all keywords for project, then their latest rankings
+    const { data: keywords, error: kwErr } = await sb
+      .from("keywords")
+      .select("id")
       .eq("project_id", projectId)
-      .not("position", "is", null);
+      .limit(500);
 
-    if (error) throw new Error(`Rankings query failed: ${error.message}`);
-    if (!data) return { top3: 0, top10: 0, top20: 0, total: 0 };
+    if (kwErr || !keywords || keywords.length === 0) return { top3: 0, top10: 0, top20: 0, total: 0 };
+
+    const keywordIds = keywords.map((k) => k.id as string);
+    const { data: rankings, error: rkErr } = await sb
+      .from("rankings")
+      .select("keyword_id, position, check_date")
+      .in("keyword_id", keywordIds)
+      .not("position", "is", null)
+      .order("check_date", { ascending: false });
+
+    if (rkErr || !rankings) return { top3: 0, top10: 0, top20: 0, total: 0 };
+
+    // Get latest position per keyword
+    const latestByKeyword = new Map<string, number>();
+    for (const r of rankings) {
+      const kid = r.keyword_id as string;
+      if (!latestByKeyword.has(kid)) {
+        latestByKeyword.set(kid, r.position as number);
+      }
+    }
 
     let top3 = 0, top10 = 0, top20 = 0;
-    for (const row of data) {
-      const pos = row.position as number;
+    for (const pos of latestByKeyword.values()) {
       if (pos <= 3) top3++;
       if (pos <= 10) top10++;
       if (pos <= 20) top20++;
     }
 
-    return { top3, top10, top20, total: data.length };
+    return { top3, top10, top20, total: latestByKeyword.size };
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error(`Network error fetching rankings: ${String(err)}`);
@@ -490,11 +561,11 @@ export async function fetchRankingsSummary(
 
 export interface Insight {
   id: string;
-  detector_type: string;
+  detector: string;
   severity: string;
   title: string;
   summary: string;
-  impact_score: number;
+  estimated_impact_usd: number | null;
   created_at: string;
 }
 
@@ -506,8 +577,9 @@ export async function fetchInsights(
     const sb = await getClient();
     const { data, error } = await sb
       .from("project_insights")
-      .select("id, detector_type, severity, title, summary, impact_score, created_at")
+      .select("id, detector, severity, title, summary, estimated_impact_usd, created_at")
       .eq("project_id", projectId)
+      .eq("dismissed", false)
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -527,7 +599,9 @@ export interface CROAudit {
   status: string;
   created_at: string;
   findings: unknown;
-  score: number | null;
+  overall_score: number | null;
+  title: string;
+  target_url: string | null;
 }
 
 export interface CRODeliverable {
@@ -535,7 +609,7 @@ export interface CRODeliverable {
   project_id: string;
   title: string;
   status: string;
-  priority: string;
+  type: string;
   created_at: string;
 }
 
@@ -547,7 +621,7 @@ export async function fetchCROAudits(
     const sb = await getClient();
     const { data, error } = await sb
       .from("cro_audits")
-      .select("id, project_id, status, created_at, findings, score")
+      .select("id, project_id, status, created_at, findings, overall_score, title, target_url")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -567,7 +641,7 @@ export async function fetchCRODeliverables(
     const sb = await getClient();
     const { data, error } = await sb
       .from("cro_deliverables")
-      .select("id, project_id, title, status, priority, created_at")
+      .select("id, project_id, title, status, type, created_at")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false });
 

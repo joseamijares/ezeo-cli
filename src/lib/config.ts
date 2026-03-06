@@ -34,7 +34,7 @@ export const SUPABASE_URL =
 
 // Public anon key — safe to bundle (it's like a public API key, not a secret)
 const BUNDLED_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5uenVrbWFpZGlkdWh1eHNhb3RuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQxNTM4MjMsImV4cCI6MjA2OTcyOTgyM30.r2xR29LclE8F7g5vMCfhRMQXNE2QLqNBFiFo7MqXjQc";
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5uenVrbWFpZGlkdWh1eHNhb3RuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQxNTM4MjMsImV4cCI6MjA2OTcyOTgyM30.fR403EO6-HuboWBV36x1_7gYhTVGAsN0_9890DjD6x4";
 
 export const SUPABASE_ANON_KEY =
   process.env.EZEO_SUPABASE_ANON_KEY ?? BUNDLED_ANON_KEY;
