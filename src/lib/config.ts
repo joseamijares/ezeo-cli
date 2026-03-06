@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-const EZEO_DIR = join(homedir(), ".ezeo");
+export const EZEO_DIR = join(homedir(), ".ezeo");
 
 // Load ~/.ezeo/.env if it exists
 function loadDotEnv(): void {
@@ -26,12 +26,18 @@ function loadDotEnv(): void {
 }
 
 loadDotEnv();
+
 const CREDENTIALS_FILE = join(EZEO_DIR, "credentials.json");
 
 export const SUPABASE_URL =
   process.env.EZEO_SUPABASE_URL ?? "https://nnzukmaididuhuxsaotn.supabase.co";
+
+// Public anon key — safe to bundle (it's like a public API key, not a secret)
+const BUNDLED_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5uenVrbWFpZGlkdWh1eHNhb3RuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQxNTM4MjMsImV4cCI6MjA2OTcyOTgyM30.r2xR29LclE8F7g5vMCfhRMQXNE2QLqNBFiFo7MqXjQc";
+
 export const SUPABASE_ANON_KEY =
-  process.env.EZEO_SUPABASE_ANON_KEY ?? "";
+  process.env.EZEO_SUPABASE_ANON_KEY ?? BUNDLED_ANON_KEY;
 
 export interface Credentials {
   access_token: string;
@@ -47,7 +53,7 @@ export const config = new Conf<{
   projectName: "ezeo",
 });
 
-function ensureDir(): void {
+export function ensureDir(): void {
   if (!existsSync(EZEO_DIR)) {
     mkdirSync(EZEO_DIR, { recursive: true });
   }
@@ -61,8 +67,10 @@ export function saveCredentials(creds: Credentials): void {
 export function loadCredentials(): Credentials | null {
   try {
     if (!existsSync(CREDENTIALS_FILE)) return null;
-    const data = readFileSync(CREDENTIALS_FILE, "utf-8");
-    return JSON.parse(data) as Credentials;
+    const raw = readFileSync(CREDENTIALS_FILE, "utf-8");
+    const data = JSON.parse(raw) as Partial<Credentials>;
+    if (!data.access_token) return null;
+    return data as Credentials;
   } catch {
     return null;
   }
@@ -81,4 +89,29 @@ export function clearCredentials(): void {
 export function isTokenExpired(creds: Credentials): boolean {
   // Refresh 5 minutes before expiry
   return Date.now() / 1000 > creds.expires_at - 300;
+}
+
+// ---- API Keys local store ----
+
+const API_KEYS_FILE = join(EZEO_DIR, "api-keys.json");
+
+export interface ApiKeyEntry {
+  id: string;
+  name: string;
+  key: string;
+  created_at: string;
+}
+
+export function loadApiKeys(): ApiKeyEntry[] {
+  try {
+    if (!existsSync(API_KEYS_FILE)) return [];
+    return JSON.parse(readFileSync(API_KEYS_FILE, "utf-8")) as ApiKeyEntry[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveApiKeys(keys: ApiKeyEntry[]): void {
+  ensureDir();
+  writeFileSync(API_KEYS_FILE, JSON.stringify(keys, null, 2), "utf-8");
 }
