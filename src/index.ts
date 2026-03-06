@@ -4,6 +4,7 @@ import { logoutCommand } from "./commands/logout.js";
 import { projectsCommand, useProjectCommand } from "./commands/projects.js";
 import { statusCommand } from "./commands/status.js";
 import { chatCommand } from "./commands/chat.js";
+import { whoamiCommand } from "./commands/whoami.js";
 
 const program = new Command();
 
@@ -21,6 +22,11 @@ program
   .command("logout")
   .description("Clear stored credentials")
   .action(logoutCommand);
+
+program
+  .command("whoami")
+  .description("Show current user, default project, and token status")
+  .action(whoamiCommand);
 
 const projectsCmd = program
   .command("projects")

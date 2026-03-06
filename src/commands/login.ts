@@ -4,6 +4,7 @@ import ora from "ora";
 import { getAuthClient, fetchProjects } from "../lib/api.js";
 import { saveCredentials, config, SUPABASE_ANON_KEY } from "../lib/config.js";
 import { formatProjectList, logo } from "../lib/formatter.js";
+import { initProjectMemory, getSoul } from "../lib/memory.js";
 
 export async function loginCommand(): Promise<void> {
   console.log();
@@ -72,6 +73,14 @@ export async function loginCommand(): Promise<void> {
         `  ${projects.length} project${projects.length !== 1 ? "s" : ""} found`
       )
     );
+
+    // Initialize memory for each project
+    for (const p of projects) {
+      initProjectMemory(p.name, p.domain ?? "");
+    }
+
+    // Ensure soul.md exists
+    getSoul();
 
     if (projects.length > 0) {
       console.log();

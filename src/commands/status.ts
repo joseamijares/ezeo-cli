@@ -2,11 +2,12 @@ import chalk from "chalk";
 import ora from "ora";
 import {
   fetchProjects,
-  fetchGSCMetrics,
-  fetchGA4Metrics,
+  fetchGSCMetricsWoW,
+  fetchGA4MetricsWoW,
   fetchGEOMetrics,
   fetchRankingsSummary,
   fetchInsights,
+  fetchTopKeywords,
 } from "../lib/api.js";
 import { config } from "../lib/config.js";
 import { formatStatus, formatInsights, formatError } from "../lib/formatter.js";
@@ -51,22 +52,31 @@ export async function statusCommand(projectName?: string): Promise<void> {
     spinner.text = `Loading ${project.name}...`;
 
     // Fetch all metrics in parallel
-    const [gsc, ga4, geo, rankings, insights] = await Promise.all([
-      fetchGSCMetrics(project.id).catch(() => ({
-        clicks: 0,
-        impressions: 0,
-        ctr: 0,
-        position: 0,
+    const [gscWoW, ga4WoW, geo, rankings, insights, topKeywords] = await Promise.all([
+      fetchGSCMetricsWoW(project.id).catch(() => ({
+        current: { clicks: 0, impressions: 0, ctr: 0, position: 0, hasData: false },
+        previous: { clicks: 0, impressions: 0, ctr: 0, position: 0, hasData: false },
+        delta: {
+          clicks: { value: 0, pct: null },
+          impressions: { value: 0, pct: null },
+          ctr: { value: 0, pct: null },
+          position: { value: 0, pct: null },
+        },
       })),
-      fetchGA4Metrics(project.id).catch(() => ({
-        sessions: 0,
-        users: 0,
-        bounceRate: 0,
+      fetchGA4MetricsWoW(project.id).catch(() => ({
+        current: { sessions: 0, users: 0, bounceRate: 0, hasData: false },
+        previous: { sessions: 0, users: 0, bounceRate: 0, hasData: false },
+        delta: {
+          sessions: { value: 0, pct: null },
+          users: { value: 0, pct: null },
+          bounceRate: { value: 0, pct: null },
+        },
       })),
       fetchGEOMetrics(project.id).catch(() => ({
         totalCitations: 0,
         platforms: {},
         citationRate: 0,
+        hasData: false,
       })),
       fetchRankingsSummary(project.id).catch(() => ({
         top3: 0,
@@ -75,11 +85,12 @@ export async function statusCommand(projectName?: string): Promise<void> {
         total: 0,
       })),
       fetchInsights(project.id).catch(() => []),
+      fetchTopKeywords(project.id, 5).catch(() => []),
     ]);
 
     spinner.stop();
 
-    console.log(formatStatus(project, gsc, ga4, geo, rankings));
+    console.log(formatStatus(project, gscWoW, ga4WoW, geo, rankings, topKeywords));
 
     if (insights.length > 0) {
       console.log(formatInsights(insights));

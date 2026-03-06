@@ -5,9 +5,12 @@ import {
   fetchProjects,
   fetchGSCMetrics,
   fetchGA4Metrics,
+  fetchGSCMetricsWoW,
+  fetchGA4MetricsWoW,
   fetchGEOMetrics,
   fetchRankingsSummary,
   fetchInsights,
+  fetchTopKeywords,
   type Project,
 } from "../lib/api.js";
 import { config } from "../lib/config.js";
@@ -22,6 +25,7 @@ import {
   logo,
 } from "../lib/formatter.js";
 import { loadCredentials } from "../lib/config.js";
+import { appendToHistory, initProjectMemory } from "../lib/memory.js";
 
 let projects: Project[] = [];
 let currentProject: Project | undefined;
@@ -68,15 +72,33 @@ async function handleIntent(intent: Intent): Promise<string | null> {
       const project = await resolveProject(intent.project);
       if (!project) return formatError(`Project not found. Try 'projects' to see all.`);
       const spinner = ora("Loading...").start();
-      const [gsc, ga4, geo, rankings, insights] = await Promise.all([
-        fetchGSCMetrics(project.id).catch(() => ({ clicks: 0, impressions: 0, ctr: 0, position: 0 })),
-        fetchGA4Metrics(project.id).catch(() => ({ sessions: 0, users: 0, bounceRate: 0 })),
-        fetchGEOMetrics(project.id).catch(() => ({ totalCitations: 0, platforms: {}, citationRate: 0 })),
+      const [gscWoW, ga4WoW, geo, rankings, insights, topKeywords] = await Promise.all([
+        fetchGSCMetricsWoW(project.id).catch(() => ({
+          current: { clicks: 0, impressions: 0, ctr: 0, position: 0, hasData: false },
+          previous: { clicks: 0, impressions: 0, ctr: 0, position: 0, hasData: false },
+          delta: {
+            clicks: { value: 0, pct: null },
+            impressions: { value: 0, pct: null },
+            ctr: { value: 0, pct: null },
+            position: { value: 0, pct: null },
+          },
+        })),
+        fetchGA4MetricsWoW(project.id).catch(() => ({
+          current: { sessions: 0, users: 0, bounceRate: 0, hasData: false },
+          previous: { sessions: 0, users: 0, bounceRate: 0, hasData: false },
+          delta: {
+            sessions: { value: 0, pct: null },
+            users: { value: 0, pct: null },
+            bounceRate: { value: 0, pct: null },
+          },
+        })),
+        fetchGEOMetrics(project.id).catch(() => ({ totalCitations: 0, platforms: {}, citationRate: 0, hasData: false })),
         fetchRankingsSummary(project.id).catch(() => ({ top3: 0, top10: 0, top20: 0, total: 0 })),
         fetchInsights(project.id, 3).catch(() => []),
+        fetchTopKeywords(project.id, 5).catch(() => []),
       ]);
       spinner.stop();
-      let result = formatStatus(project, gsc, ga4, geo, rankings);
+      let result = formatStatus(project, gscWoW, ga4WoW, geo, rankings, topKeywords);
       if (insights.length > 0) result += "\n" + formatInsights(insights);
       return result;
     }
@@ -167,6 +189,11 @@ export async function chatCommand(): Promise<void> {
     const defaultId = config.get("defaultProject");
     currentProject = projects.find((p) => p.id === defaultId) ?? projects[0];
 
+    // Initialize memory for current project
+    if (currentProject) {
+      initProjectMemory(currentProject.name, currentProject.domain ?? "");
+    }
+
     spinner.stop();
 
     console.log();
@@ -207,6 +234,14 @@ export async function chatCommand(): Promise<void> {
         }
 
         console.log(result);
+
+        // Log to project history
+        if (currentProject && intent.type !== "help" && intent.type !== "exit") {
+          appendToHistory(
+            currentProject.name,
+            `- Query: \`${input}\` (${intent.type})`
+          );
+        }
       } catch (err) {
         console.log(
           formatError(err instanceof Error ? err.message : String(err))
