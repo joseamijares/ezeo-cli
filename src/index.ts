@@ -5,6 +5,7 @@ import { projectsCommand, useProjectCommand } from "./commands/projects.js";
 import { statusCommand } from "./commands/status.js";
 import { chatCommand } from "./commands/chat.js";
 import { whoamiCommand } from "./commands/whoami.js";
+import { memoryCommand } from "./commands/memory.js";
 
 const program = new Command();
 
@@ -47,6 +48,11 @@ program
   .command("chat")
   .description("Interactive conversational mode")
   .action(chatCommand);
+
+program
+  .command("memory [target]")
+  .description("View memory files (soul, global, or project name)")
+  .action((target?: string) => memoryCommand(target));
 
 // Default to chat if no command specified
 program.action(chatCommand);
