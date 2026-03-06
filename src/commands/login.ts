@@ -2,13 +2,20 @@ import inquirer from "inquirer";
 import chalk from "chalk";
 import ora from "ora";
 import { getAuthClient, fetchProjects } from "../lib/api.js";
-import { saveCredentials, config } from "../lib/config.js";
+import { saveCredentials, config, SUPABASE_ANON_KEY } from "../lib/config.js";
 import { formatProjectList, logo } from "../lib/formatter.js";
 
 export async function loginCommand(): Promise<void> {
   console.log();
   console.log(logo());
   console.log();
+
+  if (!SUPABASE_ANON_KEY) {
+    console.log(chalk.red("  EZEO_SUPABASE_ANON_KEY environment variable is required."));
+    console.log(chalk.gray("  Set it in your shell: export EZEO_SUPABASE_ANON_KEY=your_key"));
+    console.log(chalk.gray("  Or add it to ~/.ezeo/.env"));
+    process.exit(1);
+  }
 
   const answers = await inquirer.prompt([
     {
