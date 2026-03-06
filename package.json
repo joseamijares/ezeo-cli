@@ -1,0 +1,44 @@
+{
+  "name": "ezeo",
+  "version": "0.1.0",
+  "description": "Ezeo AI CLI — Talk to your SEO data",
+  "type": "module",
+  "bin": {
+    "ezeo": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["seo", "geo", "ai", "cli", "ezeo"],
+  "author": "JAMAK AI <contacto@jamak.com.mx>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/joseamijares/ezeo-cli.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "chalk": "^5.4.1",
+    "cli-table3": "^0.6.5",
+    "commander": "^13.1.0",
+    "conf": "^13.1.0",
+    "inquirer": "^12.4.0",
+    "ora": "^8.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "eslint": "^9.20.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.0"
+  }
+}

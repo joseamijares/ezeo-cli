@@ -1,0 +1,48 @@
+import { Command } from "commander";
+import { loginCommand } from "./commands/login.js";
+import { logoutCommand } from "./commands/logout.js";
+import { projectsCommand, useProjectCommand } from "./commands/projects.js";
+import { statusCommand } from "./commands/status.js";
+import { chatCommand } from "./commands/chat.js";
+
+const program = new Command();
+
+program
+  .name("ezeo")
+  .description("Ezeo AI CLI — Talk to your SEO data")
+  .version("0.1.0");
+
+program
+  .command("login")
+  .description("Authenticate with your Ezeo account")
+  .action(loginCommand);
+
+program
+  .command("logout")
+  .description("Clear stored credentials")
+  .action(logoutCommand);
+
+const projectsCmd = program
+  .command("projects")
+  .description("List your projects")
+  .action(projectsCommand);
+
+projectsCmd
+  .command("use <name>")
+  .description("Set default project")
+  .action(useProjectCommand);
+
+program
+  .command("status [project]")
+  .description("Project dashboard overview")
+  .action((project?: string) => statusCommand(project));
+
+program
+  .command("chat")
+  .description("Interactive conversational mode")
+  .action(chatCommand);
+
+// Default to chat if no command specified
+program.action(chatCommand);
+
+program.parse();
