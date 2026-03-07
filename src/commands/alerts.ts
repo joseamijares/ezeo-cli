@@ -28,6 +28,16 @@ function timeAgo(date: Date): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+function cleanSummary(str: string, maxLen: number = 120): string {
+  if (!str) return "";
+  return str
+    .replace(/[\u{1F600}-\u{1F9FF}\u{2600}-\u{2B55}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu, "")
+    .replace(/\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLen) + (str.length > maxLen ? "..." : "");
+}
+
 export async function alertsCommand(projectName?: string): Promise<void> {
   const globalOpts = getGlobalOpts();
   const useJson = globalOpts.json;
@@ -96,9 +106,10 @@ export async function alertsCommand(projectName?: string): Promise<void> {
       console.log(cyan.bold(`  ${label} (${items.length})`));
       for (const ins of items) {
         const age = timeAgo(new Date(ins.created_at));
-        console.log(`  ${severityIcon(ins.severity)} ${chalk.white.bold(ins.title)} ${chalk.gray(`(${age})`)}`);
+        const title = ins.title.length > 70 ? ins.title.slice(0, 67) + "..." : ins.title;
+        console.log(`  ${severityIcon(ins.severity)} ${chalk.white.bold(title)} ${chalk.gray(`(${age})`)}`);
         if (ins.summary) {
-          console.log(`    ${chalk.gray(ins.summary)}`);
+          console.log(`    ${chalk.gray(cleanSummary(ins.summary))}`);
         }
         console.log();
       }

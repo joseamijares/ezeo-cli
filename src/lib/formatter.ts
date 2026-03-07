@@ -129,17 +129,14 @@ export function formatStatus(
   } else {
     lines.push(
       `    Sessions: ${chalk.white.bold(fmtNum(ga4.sessions))}${fmtDelta(ga4WoW.delta.sessions)}  |  ` +
-      `Users: ${chalk.white(fmtNum(ga4.users))}${fmtDelta(ga4WoW.delta.users)}  |  ` +
       `Bounce Rate: ${chalk.white(ga4.bounceRate.toFixed(1) + "%")}${fmtDelta(ga4WoW.delta.bounceRate, true)}`
     );
   }
   lines.push("");
 
-  // GEO
-  lines.push(cyan.bold("  AI Visibility (30d)"));
-  if (!geo.hasData) {
-    lines.push(chalk.gray("    No data yet"));
-  } else if (geo.totalCitations > 0) {
+  // GEO — only show if there's actual data worth showing
+  if (geo.hasData && geo.totalCitations > 0) {
+    lines.push(cyan.bold("  AI Visibility (30d)"));
     const platformStr = Object.entries(geo.platforms)
       .sort(([, a], [, b]) => b - a)
       .map(([name, count]) => `${name}: ${count}`)
@@ -149,55 +146,53 @@ export function formatStatus(
       `Citation Rate: ${chalk.white(geo.citationRate.toFixed(1) + "%")}`
     );
     lines.push(`    Platforms: ${chalk.gray(platformStr)}`);
-  } else {
-    lines.push(chalk.gray("    No AI citations detected yet"));
-  }
-  lines.push("");
-
-  // Rankings
-  lines.push(cyan.bold("  Rankings"));
-  lines.push(
-    `    Top 3: ${lime.bold(String(rankings.top3))}  |  ` +
-    `Top 10: ${chalk.white(String(rankings.top10))}  |  ` +
-    `Top 20: ${chalk.white(String(rankings.top20))}  |  ` +
-    `Total tracked: ${chalk.gray(String(rankings.total))}`
-  );
-  lines.push("");
-
-  // Top Keywords
-  if (topKeywords.length > 0) {
-    lines.push(cyan.bold("  Top Keywords"));
-    const kwTable = new Table({
-      head: [
-        chalk.gray("Keyword"),
-        chalk.gray("Position"),
-        chalk.gray("Change"),
-      ],
-      style: { head: [], border: ["gray"] },
-      colWidths: [40, 12, 12],
-    });
-
-    for (const kw of topKeywords) {
-      let changeStr: string;
-      if (kw.change === null) {
-        changeStr = chalk.gray("—");
-      } else if (kw.change < 0) {
-        changeStr = chalk.hex("#7CE850")(`▲ ${Math.abs(kw.change)}`);
-      } else if (kw.change > 0) {
-        changeStr = chalk.hex("#FF3B30")(`▼ ${kw.change}`);
-      } else {
-        changeStr = chalk.gray("—");
-      }
-
-      kwTable.push([
-        chalk.white(kw.keyword),
-        chalk.white.bold(String(Math.round(kw.position))),
-        changeStr,
-      ]);
-    }
-
-    lines.push(kwTable.toString());
     lines.push("");
+  }
+
+  // Rankings — only show if there are ranked keywords
+  if (rankings.total > 0) {
+    const ranked = rankings.top3 + (rankings.top10 - rankings.top3) + (rankings.top20 - rankings.top10);
+    const unranked = rankings.total - rankings.top20;
+    lines.push(cyan.bold("  Rankings"));
+    lines.push(
+      `    Top 3: ${lime.bold(String(rankings.top3))}  |  ` +
+      `Top 10: ${chalk.white(String(rankings.top10))}  |  ` +
+      `Top 20: ${chalk.white(String(rankings.top20))}  |  ` +
+      `Tracked: ${chalk.gray(String(rankings.total))}`
+    );
+    if (unranked > 0 && rankings.top20 < rankings.total) {
+      lines.push(chalk.gray(`    ${unranked} keyword${unranked !== 1 ? "s" : ""} outside top 100`));
+    }
+    lines.push("");
+  }
+
+  // Top Keywords — filter out position >= 100 (not ranking), only show if meaningful
+  if (topKeywords.length > 0) {
+    const rankedKws = topKeywords.filter((kw) => kw.position < 100);
+    if (rankedKws.length > 0) {
+      lines.push(cyan.bold("  Top Keywords"));
+      for (const kw of rankedKws) {
+        let changeStr: string;
+        if (kw.change === null) {
+          changeStr = "";
+        } else if (kw.change < 0) {
+          changeStr = chalk.hex("#7CE850")(` ▲ ${Math.abs(kw.change)}`);
+        } else if (kw.change > 0) {
+          changeStr = chalk.hex("#FF3B30")(` ▼ ${kw.change}`);
+        } else {
+          changeStr = "";
+        }
+
+        const posColor = kw.position <= 3 ? lime : kw.position <= 10 ? chalk.white : warn;
+        lines.push(
+          `    ${chalk.white(kw.keyword.padEnd(40))} ${posColor.bold("#" + String(Math.round(kw.position)))}${changeStr}`
+        );
+      }
+      lines.push("");
+    } else {
+      lines.push(chalk.gray("  No keywords ranking in top 100 yet"));
+      lines.push("");
+    }
   }
 
   return lines.join("\n");
@@ -205,7 +200,12 @@ export function formatStatus(
 
 function truncate(str: string, maxLen: number): string {
   if (!str) return "";
-  const singleLine = str.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+  // Strip emoji, collapse whitespace, single line
+  const singleLine = str
+    .replace(/[\u{1F600}-\u{1F9FF}\u{2600}-\u{2B55}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu, "")
+    .replace(/\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (singleLine.length <= maxLen) return singleLine;
   return singleLine.slice(0, maxLen - 3) + "...";
 }

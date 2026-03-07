@@ -10,12 +10,16 @@ import {
   fetchTopKeywords,
 } from "../lib/api.js";
 import { config } from "../lib/config.js";
+import { getGlobalOpts } from "../lib/globals.js";
 import { formatStatus, formatInsights, formatError } from "../lib/formatter.js";
 
 export async function statusCommand(
   projectName?: string,
   jsonOutput?: boolean
 ): Promise<void> {
+  // Merge with global opts (Commander doesn't always pass global --json to subcommands)
+  const globalOpts = getGlobalOpts();
+  const useJson = jsonOutput || globalOpts.json;
   const spinner = ora("Loading...").start();
 
   try {
@@ -88,12 +92,12 @@ export async function statusCommand(
         total: 0,
       })),
       fetchInsights(project.id).catch(() => []),
-      fetchTopKeywords(project.id, 5).catch(() => []),
+      fetchTopKeywords(project.id, 20).catch(() => []),
     ]);
 
     spinner.stop();
 
-    if (jsonOutput) {
+    if (useJson) {
       const output = {
         project: {
           id: project.id,

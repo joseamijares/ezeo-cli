@@ -143,20 +143,17 @@ Examples:
 program
   .command("status [project]")
   .description("Project dashboard — GSC, GA4, GEO, rankings overview")
-  .option("--json", "Output as machine-readable JSON")
   .addHelpText(
     "after",
     `
 Examples:
   ezeo status                   # Default project
   ezeo status "Aqua Pro Vac"    # Specific project
-  ezeo status aqua --json       # JSON output
+  ezeo --json status aqua       # JSON output
   ezeo --project aqua status    # Via global flag`
   )
-  .action((project: string | undefined, opts: { json?: boolean }) => {
-    const globalOpts = { json: opts.json };
-    setGlobalOpts(globalOpts);
-    return statusCommand(project, opts.json);
+  .action((project: string | undefined) => {
+    return statusCommand(project);
   });
 
 // ---- report ----

@@ -82,7 +82,6 @@ function buildMarkdown(
   lines.push(`| Metric | Current | Change |`);
   lines.push(`|--------|---------|--------|`);
   lines.push(`| Sessions | ${fmtNum(a.sessions)} | ${ga4WoW.delta.sessions.pct !== null ? (ga4WoW.delta.sessions.pct > 0 ? "+" : "") + ga4WoW.delta.sessions.pct.toFixed(1) + "%" : "—"} |`);
-  lines.push(`| Users | ${fmtNum(a.users)} | ${ga4WoW.delta.users.pct !== null ? (ga4WoW.delta.users.pct > 0 ? "+" : "") + ga4WoW.delta.users.pct.toFixed(1) + "%" : "—"} |`);
   lines.push(`| Bounce Rate | ${a.bounceRate.toFixed(1)}% | ${ga4WoW.delta.bounceRate.pct !== null ? (ga4WoW.delta.bounceRate.pct > 0 ? "+" : "") + ga4WoW.delta.bounceRate.pct.toFixed(1) + "%" : "—"} |`);
   lines.push("");
 
@@ -90,19 +89,20 @@ function buildMarkdown(
   lines.push(`Top 3: **${rankings.top3}** | Top 10: **${rankings.top10}** | Top 20: **${rankings.top20}** | Total: ${rankings.total}`);
   lines.push("");
 
-  if (topKeywords.length > 0) {
+  const rankedKws = topKeywords.filter((kw) => kw.position < 100);
+  if (rankedKws.length > 0) {
     lines.push("## Top Keywords");
     lines.push(`| Keyword | Position | Change |`);
     lines.push(`|---------|----------|--------|`);
-    for (const kw of topKeywords) {
+    for (const kw of rankedKws) {
       const change = kw.change !== null ? (kw.change < 0 ? `▲ ${Math.abs(kw.change)}` : kw.change > 0 ? `▼ ${kw.change}` : "—") : "—";
-      lines.push(`| ${kw.keyword} | ${Math.round(kw.position)} | ${change} |`);
+      lines.push(`| ${kw.keyword} | #${Math.round(kw.position)} | ${change} |`);
     }
     lines.push("");
   }
 
-  lines.push("## GEO / AI Visibility (30d)");
-  if (geo.hasData) {
+  if (geo.hasData && geo.totalCitations > 0) {
+    lines.push("## GEO / AI Visibility (30d)");
     lines.push(`Citation Rate: **${geo.citationRate.toFixed(1)}%** (${geo.totalCitations} citations)`);
     const platforms = Object.entries(geo.platforms).sort(([, a], [, b]) => b - a);
     if (platforms.length > 0) {
@@ -113,16 +113,20 @@ function buildMarkdown(
         lines.push(`| ${p} | ${c} |`);
       }
     }
-  } else {
-    lines.push("No AI citation data yet.");
+    lines.push("");
   }
-  lines.push("");
 
   if (insights.length > 0) {
     lines.push("## Recent Insights");
     for (const ins of insights) {
+      const summary = ins.summary
+        ?.replace(/[\u{1F600}-\u{1F9FF}\u{2600}-\u{2B55}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu, "")
+        ?.replace(/\n/g, " ")
+        ?.replace(/\s+/g, " ")
+        ?.trim()
+        ?.slice(0, 150);
       lines.push(`- **[${ins.severity.toUpperCase()}]** ${ins.title}`);
-      if (ins.summary) lines.push(`  ${ins.summary}`);
+      if (summary) lines.push(`  ${summary}`);
     }
     lines.push("");
   }
@@ -175,55 +179,56 @@ function buildText(
     lines.push(chalk.gray("    No data yet"));
   } else {
     lines.push(`    Sessions:   ${chalk.white.bold(fmtNum(a.sessions))}  ${fmtDelta(ga4WoW.delta.sessions.value, ga4WoW.delta.sessions.pct)}`);
-    lines.push(`    Users:      ${chalk.white(fmtNum(a.users))}  ${fmtDelta(ga4WoW.delta.users.value, ga4WoW.delta.users.pct)}`);
     lines.push(`    Bounce:     ${chalk.white(a.bounceRate.toFixed(1) + "%")}  ${fmtDelta(ga4WoW.delta.bounceRate.value, ga4WoW.delta.bounceRate.pct, true)}`);
   }
   lines.push("");
 
   // Rankings
-  lines.push(cyan.bold("  Rankings"));
-  lines.push(`    Top 3: ${lime.bold(String(rankings.top3))}  |  Top 10: ${chalk.white(String(rankings.top10))}  |  Top 20: ${chalk.white(String(rankings.top20))}  |  Total: ${chalk.gray(String(rankings.total))}`);
-  lines.push("");
+  if (rankings.total > 0) {
+    lines.push(cyan.bold("  Rankings"));
+    lines.push(`    Top 3: ${lime.bold(String(rankings.top3))}  |  Top 10: ${chalk.white(String(rankings.top10))}  |  Top 20: ${chalk.white(String(rankings.top20))}  |  Tracked: ${chalk.gray(String(rankings.total))}`);
+    lines.push("");
+  }
 
-  // Top Keywords
-  if (topKeywords.length > 0) {
+  // Top Keywords — filter out unranked
+  const rankedKws = topKeywords.filter((kw) => kw.position < 100);
+  if (rankedKws.length > 0) {
     lines.push(cyan.bold("  Top Keywords"));
-    for (const kw of topKeywords) {
-      let changeStr: string;
-      if (kw.change === null) {
-        changeStr = chalk.gray("—");
-      } else if (kw.change < 0) {
-        changeStr = lime(`▲ ${Math.abs(kw.change)}`);
-      } else if (kw.change > 0) {
-        changeStr = danger(`▼ ${kw.change}`);
-      } else {
-        changeStr = chalk.gray("—");
+    for (const kw of rankedKws) {
+      let changeStr = "";
+      if (kw.change !== null && kw.change < 0) {
+        changeStr = lime(` ▲ ${Math.abs(kw.change)}`);
+      } else if (kw.change !== null && kw.change > 0) {
+        changeStr = danger(` ▼ ${kw.change}`);
       }
-      lines.push(`    ${chalk.white(kw.keyword.padEnd(40))} pos ${chalk.white.bold(String(Math.round(kw.position)).padStart(3))}  ${changeStr}`);
+      const posColor = kw.position <= 3 ? lime : kw.position <= 10 ? chalk.white : warn;
+      lines.push(`    ${chalk.white(kw.keyword.padEnd(40))} ${posColor.bold("#" + String(Math.round(kw.position)))}${changeStr}`);
     }
     lines.push("");
   }
 
-  // GEO
-  lines.push(cyan.bold("  AI Visibility (30d)"));
-  if (!geo.hasData) {
-    lines.push(chalk.gray("    No citation data yet"));
-  } else {
+  // GEO — only show if citations exist
+  if (geo.hasData && geo.totalCitations > 0) {
+    lines.push(cyan.bold("  AI Visibility (30d)"));
     lines.push(`    Citation Rate: ${lime.bold(geo.citationRate.toFixed(1) + "%")}  (${geo.totalCitations} citations)`);
     const platforms = Object.entries(geo.platforms).sort(([, a], [, b]) => b - a);
     for (const [p, c] of platforms) {
       lines.push(`    ${chalk.gray(p.padEnd(20))} ${chalk.white(String(c))} citations`);
     }
+    lines.push("");
   }
-  lines.push("");
 
   // Insights
   if (insights.length > 0) {
     lines.push(cyan.bold("  Recent Insights"));
     for (const ins of insights) {
       const icon = ins.severity === "critical" ? danger("!!!") : ins.severity === "high" ? warn("!!") : chalk.yellow("!");
-      lines.push(`  ${icon} ${chalk.white.bold(ins.title)}`);
-      if (ins.summary) lines.push(`    ${chalk.gray(ins.summary)}`);
+      const title = ins.title.length > 70 ? ins.title.slice(0, 67) + "..." : ins.title;
+      const summary = ins.summary
+        ?.replace(/[\u{1F600}-\u{1F9FF}\u{2600}-\u{2B55}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu, "")
+        ?.replace(/\n/g, " ")?.replace(/\s+/g, " ")?.trim()?.slice(0, 120);
+      lines.push(`  ${icon} ${chalk.white.bold(title)}`);
+      if (summary) lines.push(`    ${chalk.gray(summary)}`);
     }
     lines.push("");
   }
