@@ -109,22 +109,51 @@ export async function croCommand(projectName?: string): Promise<void> {
     // Latest audit
     if (audits.length > 0) {
       const latest = audits[0];
-      const score = latest.score;
+      const score = latest.overall_score;
       const findings = formatFindings(latest.findings);
       const dateStr = new Date(latest.created_at).toLocaleDateString();
 
       console.log(cyan.bold("  Latest CRO Audit"));
+      if (latest.title) {
+        console.log(`    ${chalk.white.bold(latest.title)}`);
+      }
       console.log(
-        `    Date:   ${chalk.white(dateStr)}  |  ` +
+        `    Date: ${chalk.white(dateStr)}  |  ` +
         `Status: ${chalk.white(latest.status)}` +
-        (score != null ? `  |  Score: ${scoreColor(score)} / 100` : "")
+        (score != null ? `  |  Score: ${scoreColor(score)}/100` : "")
       );
+      if (latest.target_url) {
+        console.log(`    URL:  ${chalk.gray(latest.target_url)}`);
+      }
+
+      // Sub-scores
+      const subs = [
+        latest.ux_score != null ? `UX ${scoreColor(latest.ux_score)}` : null,
+        latest.performance_score != null ? `Perf ${scoreColor(latest.performance_score)}` : null,
+        latest.conversion_score != null ? `Conv ${scoreColor(latest.conversion_score)}` : null,
+        latest.mobile_score != null ? `Mobile ${scoreColor(latest.mobile_score)}` : null,
+      ].filter(Boolean);
+      if (subs.length > 0) {
+        console.log(`    ${subs.join("  |  ")}`);
+      }
 
       if (findings.length > 0) {
         console.log("");
-        console.log(cyan.bold("  Top Findings"));
+        console.log(cyan.bold("  Findings"));
         for (const finding of findings) {
-          console.log(`    ${chalk.gray("*")} ${chalk.white(finding)}`);
+          console.log(`    ${chalk.hex("#FF3B30")("▸")} ${chalk.white(finding)}`);
+        }
+      }
+
+      // Quick wins
+      const quickWins = latest.quick_wins;
+      if (quickWins && quickWins.length > 0) {
+        console.log("");
+        console.log(cyan.bold("  Quick Wins"));
+        for (const qw of quickWins.slice(0, 5)) {
+          const effort = qw.effort === "low" ? lime("easy") : qw.effort === "medium" ? chalk.hex("#FF9500")("medium") : chalk.hex("#FF3B30")("hard");
+          const impact = qw.impact === "high" ? lime("high impact") : qw.impact === "medium" ? chalk.hex("#FF9500")("med impact") : chalk.gray("low impact");
+          console.log(`    ${lime("✦")} ${chalk.white(qw.title)}  ${chalk.gray("—")} ${effort}, ${impact}`);
         }
       }
       console.log("");

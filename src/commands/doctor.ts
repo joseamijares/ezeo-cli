@@ -53,7 +53,7 @@ async function runChecks(): Promise<CheckResult[]> {
     results.push({
       name: "Supabase connectivity",
       status: resp.status < 500 ? "ok" : "fail",
-      message: `HTTP ${resp.status}`,
+      message: resp.status < 500 ? "Reachable" : `Server error (HTTP ${resp.status})`,
     });
   } catch {
     results.push({ name: "Supabase connectivity", status: "fail", message: "Cannot reach Supabase — check your internet connection" });

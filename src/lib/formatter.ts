@@ -129,8 +129,14 @@ export function formatStatus(
   } else {
     lines.push(
       `    Sessions: ${chalk.white.bold(fmtNum(ga4.sessions))}${fmtDelta(ga4WoW.delta.sessions)}  |  ` +
-      `Bounce Rate: ${chalk.white(ga4.bounceRate.toFixed(1) + "%")}${fmtDelta(ga4WoW.delta.bounceRate, true)}`
+      `Pageviews: ${chalk.white(fmtNum(ga4.pageviews))}${fmtDelta(ga4WoW.delta.pageviews)}  |  ` +
+      `Bounce: ${chalk.white(ga4.bounceRate.toFixed(1) + "%")}${fmtDelta(ga4WoW.delta.bounceRate, true)}`
     );
+    if (ga4.pagesPerSession > 0) {
+      lines.push(
+        chalk.gray(`    ${ga4.pagesPerSession.toFixed(1)} pages/session  |  Avg ${fmtDuration(ga4.avgDuration)}`)
+      );
+    }
   }
   lines.push("");
 
@@ -198,16 +204,22 @@ export function formatStatus(
   return lines.join("\n");
 }
 
-function truncate(str: string, maxLen: number): string {
+function cleanText(str: string): string {
   if (!str) return "";
-  // Strip emoji, collapse whitespace, single line
-  const singleLine = str
+  return str
     .replace(/[\u{1F600}-\u{1F9FF}\u{2600}-\u{2B55}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu, "")
+    .replace(/#null/g, "unranked")
+    .replace(/\(#null → /g, "(unranked → ")
     .replace(/\n/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (singleLine.length <= maxLen) return singleLine;
-  return singleLine.slice(0, maxLen - 3) + "...";
+}
+
+function truncate(str: string, maxLen: number): string {
+  if (!str) return "";
+  const clean = cleanText(str);
+  if (clean.length <= maxLen) return clean;
+  return clean.slice(0, maxLen - 3) + "...";
 }
 
 export function formatInsights(insights: Insight[]): string {
@@ -218,9 +230,9 @@ export function formatInsights(insights: Insight[]): string {
   for (const insight of insights) {
     const icon = severityIcon(insight.severity);
     const age = timeAgo(new Date(insight.created_at));
-    lines.push(`  ${icon} ${chalk.white.bold(truncate(insight.title, 60))} ${chalk.gray(`(${age})`)}`);
+    lines.push(`  ${icon} ${chalk.white.bold(truncate(insight.title, 70))} ${chalk.gray(`(${age})`)}`);
     if (insight.summary) {
-      lines.push(`    ${chalk.gray(truncate(insight.summary, 100))}`);
+      lines.push(`    ${chalk.gray(truncate(insight.summary, 110))}`);
     }
     lines.push("");
   }
@@ -274,6 +286,13 @@ function fmtNum(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
   return String(Math.round(n));
+}
+
+function fmtDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
 function severityIcon(severity: string): string {

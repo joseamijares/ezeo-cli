@@ -175,7 +175,7 @@ export interface GA4MetricsWoW {
   previous: GA4Metrics;
   delta: {
     sessions: MetricDelta;
-    users: MetricDelta;
+    pageviews: MetricDelta;
     bounceRate: MetricDelta; // lower = better
   };
 }
@@ -256,8 +256,10 @@ async function fetchGSCMetricsPeriod(
 
 export interface GA4Metrics {
   sessions: number;
-  users: number;
+  pageviews: number;
+  pagesPerSession: number;
   bounceRate: number;
+  avgDuration: number;
   hasData: boolean;
 }
 
@@ -278,7 +280,7 @@ export async function fetchGA4Metrics(
 
     if (error) throw new Error(`GA4 query failed: ${error.message}`);
     if (!data || data.length === 0) {
-      return { sessions: 0, users: 0, bounceRate: 0, hasData: false };
+      return { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, hasData: false };
     }
 
     const totals = data.reduce(
@@ -286,17 +288,21 @@ export async function fetchGA4Metrics(
         const m = (row.metrics ?? {}) as Record<string, number>;
         return {
           sessions: acc.sessions + (m.sessions ?? 0),
-          bounceRate: acc.bounceRate + (m.bounceRate ?? 0),
+          pageviews: acc.pageviews + (m.screenPageViews ?? 0),
+          bounceCount: acc.bounceCount + (m.bounceRate ?? 0), // bounceRate is 0 or 1 per row
+          avgDuration: acc.avgDuration + (m.averageSessionDuration ?? 0),
           count: acc.count + 1,
         };
       },
-      { sessions: 0, bounceRate: 0, count: 0 }
+      { sessions: 0, pageviews: 0, bounceCount: 0, avgDuration: 0, count: 0 }
     );
 
     return {
       sessions: totals.sessions,
-      users: totals.sessions, // analytics_data doesn't have a separate users column; approximate with sessions
-      bounceRate: totals.count > 0 ? totals.bounceRate / totals.count : 0,
+      pageviews: totals.pageviews,
+      pagesPerSession: totals.sessions > 0 ? totals.pageviews / totals.sessions : 0,
+      bounceRate: totals.count > 0 ? (totals.bounceCount / totals.count) * 100 : 0, // convert to percentage
+      avgDuration: totals.count > 0 ? totals.avgDuration / totals.count : 0,
       hasData: true,
     };
   } catch (err) {
@@ -327,7 +333,7 @@ async function fetchGA4MetricsPeriod(
 
     if (error) throw new Error(`GA4 period query failed: ${error.message}`);
     if (!data || data.length === 0) {
-      return { sessions: 0, users: 0, bounceRate: 0, hasData: false };
+      return { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, hasData: false };
     }
 
     const totals = data.reduce(
@@ -335,17 +341,21 @@ async function fetchGA4MetricsPeriod(
         const m = (row.metrics ?? {}) as Record<string, number>;
         return {
           sessions: acc.sessions + (m.sessions ?? 0),
-          bounceRate: acc.bounceRate + (m.bounceRate ?? 0),
+          pageviews: acc.pageviews + (m.screenPageViews ?? 0),
+          bounceCount: acc.bounceCount + (m.bounceRate ?? 0),
+          avgDuration: acc.avgDuration + (m.averageSessionDuration ?? 0),
           count: acc.count + 1,
         };
       },
-      { sessions: 0, bounceRate: 0, count: 0 }
+      { sessions: 0, pageviews: 0, bounceCount: 0, avgDuration: 0, count: 0 }
     );
 
     return {
       sessions: totals.sessions,
-      users: totals.sessions,
-      bounceRate: totals.count > 0 ? totals.bounceRate / totals.count : 0,
+      pageviews: totals.pageviews,
+      pagesPerSession: totals.sessions > 0 ? totals.pageviews / totals.sessions : 0,
+      bounceRate: totals.count > 0 ? (totals.bounceCount / totals.count) * 100 : 0,
+      avgDuration: totals.count > 0 ? totals.avgDuration / totals.count : 0,
       hasData: true,
     };
   } catch (err) {
@@ -366,7 +376,7 @@ export async function fetchGA4MetricsWoW(projectId: string): Promise<GA4MetricsW
     previous,
     delta: {
       sessions: calcDelta(current.sessions, previous.sessions),
-      users: calcDelta(current.users, previous.users),
+      pageviews: calcDelta(current.pageviews, previous.pageviews),
       bounceRate: calcDelta(current.bounceRate, previous.bounceRate),
     },
   };
@@ -598,8 +608,13 @@ export interface CROAudit {
   project_id: string;
   status: string;
   created_at: string;
-  findings: unknown;
+  findings: Array<{ category: string; severity: string; description: string }>;
+  quick_wins: Array<{ title: string; effort: string; impact: string }>;
   overall_score: number | null;
+  ux_score: number | null;
+  performance_score: number | null;
+  conversion_score: number | null;
+  mobile_score: number | null;
   title: string;
   target_url: string | null;
 }
@@ -621,7 +636,7 @@ export async function fetchCROAudits(
     const sb = await getClient();
     const { data, error } = await sb
       .from("cro_audits")
-      .select("id, project_id, status, created_at, findings, overall_score, title, target_url")
+      .select("id, project_id, status, created_at, findings, quick_wins, overall_score, ux_score, performance_score, conversion_score, mobile_score, title, target_url")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
       .limit(limit);

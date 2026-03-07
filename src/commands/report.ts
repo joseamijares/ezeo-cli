@@ -82,6 +82,7 @@ function buildMarkdown(
   lines.push(`| Metric | Current | Change |`);
   lines.push(`|--------|---------|--------|`);
   lines.push(`| Sessions | ${fmtNum(a.sessions)} | ${ga4WoW.delta.sessions.pct !== null ? (ga4WoW.delta.sessions.pct > 0 ? "+" : "") + ga4WoW.delta.sessions.pct.toFixed(1) + "%" : "—"} |`);
+  lines.push(`| Pageviews | ${fmtNum(a.pageviews)} | ${ga4WoW.delta.pageviews.pct !== null ? (ga4WoW.delta.pageviews.pct > 0 ? "+" : "") + ga4WoW.delta.pageviews.pct.toFixed(1) + "%" : "—"} |`);
   lines.push(`| Bounce Rate | ${a.bounceRate.toFixed(1)}% | ${ga4WoW.delta.bounceRate.pct !== null ? (ga4WoW.delta.bounceRate.pct > 0 ? "+" : "") + ga4WoW.delta.bounceRate.pct.toFixed(1) + "%" : "—"} |`);
   lines.push("");
 
@@ -119,13 +120,15 @@ function buildMarkdown(
   if (insights.length > 0) {
     lines.push("## Recent Insights");
     for (const ins of insights) {
+      const title = ins.title?.replace(/#null/g, "unranked").replace(/\(#null → /g, "(unranked → ");
       const summary = ins.summary
         ?.replace(/[\u{1F600}-\u{1F9FF}\u{2600}-\u{2B55}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu, "")
+        ?.replace(/#null/g, "unranked")
         ?.replace(/\n/g, " ")
         ?.replace(/\s+/g, " ")
         ?.trim()
         ?.slice(0, 150);
-      lines.push(`- **[${ins.severity.toUpperCase()}]** ${ins.title}`);
+      lines.push(`- **[${ins.severity.toUpperCase()}]** ${title}`);
       if (summary) lines.push(`  ${summary}`);
     }
     lines.push("");
@@ -179,6 +182,7 @@ function buildText(
     lines.push(chalk.gray("    No data yet"));
   } else {
     lines.push(`    Sessions:   ${chalk.white.bold(fmtNum(a.sessions))}  ${fmtDelta(ga4WoW.delta.sessions.value, ga4WoW.delta.sessions.pct)}`);
+    lines.push(`    Pageviews:  ${chalk.white(fmtNum(a.pageviews))}  ${fmtDelta(ga4WoW.delta.pageviews.value, ga4WoW.delta.pageviews.pct)}`);
     lines.push(`    Bounce:     ${chalk.white(a.bounceRate.toFixed(1) + "%")}  ${fmtDelta(ga4WoW.delta.bounceRate.value, ga4WoW.delta.bounceRate.pct, true)}`);
   }
   lines.push("");
@@ -281,9 +285,9 @@ export async function reportCommand(
         delta: { clicks: { value: 0, pct: null }, impressions: { value: 0, pct: null }, ctr: { value: 0, pct: null }, position: { value: 0, pct: null } },
       })),
       fetchGA4MetricsWoW(project.id).catch(() => ({
-        current: { sessions: 0, users: 0, bounceRate: 0, hasData: false },
-        previous: { sessions: 0, users: 0, bounceRate: 0, hasData: false },
-        delta: { sessions: { value: 0, pct: null }, users: { value: 0, pct: null }, bounceRate: { value: 0, pct: null } },
+        current: { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, hasData: false },
+        previous: { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, hasData: false },
+        delta: { sessions: { value: 0, pct: null }, pageviews: { value: 0, pct: null }, bounceRate: { value: 0, pct: null } },
       })),
       fetchGEOMetrics(project.id).catch(() => ({ totalCitations: 0, platforms: {}, citationRate: 0, hasData: false })),
       fetchRankingsSummary(project.id).catch(() => ({ top3: 0, top10: 0, top20: 0, total: 0 })),

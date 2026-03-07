@@ -71,11 +71,11 @@ export async function statusCommand(
         },
       })),
       fetchGA4MetricsWoW(project.id).catch(() => ({
-        current: { sessions: 0, users: 0, bounceRate: 0, hasData: false },
-        previous: { sessions: 0, users: 0, bounceRate: 0, hasData: false },
+        current: { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, hasData: false },
+        previous: { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, hasData: false },
         delta: {
           sessions: { value: 0, pct: null },
-          users: { value: 0, pct: null },
+          pageviews: { value: 0, pct: null },
           bounceRate: { value: 0, pct: null },
         },
       })),
