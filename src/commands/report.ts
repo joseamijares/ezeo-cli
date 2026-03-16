@@ -42,7 +42,7 @@ function fmtDelta(value: number, pct: number | null, invertGood = false): string
   return (invertGood ? lime : danger)(`-${abs}`);
 }
 
-function severityColor(severity: string): chalk.Chalk {
+function severityColor(severity: string): typeof chalk {
   switch (severity) {
     case "critical": return danger;
     case "high": return warn;

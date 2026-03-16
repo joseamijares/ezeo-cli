@@ -16,6 +16,7 @@ import { reportCommand } from "./commands/report.js";
 import { alertsCommand } from "./commands/alerts.js";
 import { geoCommand } from "./commands/geo.js";
 import { doctorCommand } from "./commands/doctor.js";
+import { keywordsCommand } from "./commands/keywords.js";
 import { config } from "./lib/config.js";
 import { setGlobalOpts } from "./lib/globals.js";
 
@@ -143,6 +144,7 @@ Examples:
 program
   .command("status [project]")
   .description("Project dashboard — GSC, GA4, GEO, rankings overview")
+  .option("--json", "Output as machine-readable JSON")
   .addHelpText(
     "after",
     `
@@ -152,8 +154,8 @@ Examples:
   ezeo --json status aqua       # JSON output
   ezeo --project aqua status    # Via global flag`
   )
-  .action((project: string | undefined) => {
-    return statusCommand(project);
+  .action((project: string | undefined, opts: { json?: boolean }) => {
+    return statusCommand(project, opts.json);
   });
 
 // ---- report ----
@@ -202,6 +204,28 @@ Examples:
   ezeo geo --json`
   )
   .action((project?: string) => geoCommand(project));
+
+// ---- keywords ----
+program
+  .command("keywords [project]")
+  .description("Show top ranking keywords with position changes")
+  .option("--json", "Output as machine-readable JSON")
+  .option("-n, --limit <number>", "Number of keywords to show", "20")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo keywords                 # Default project, top 20
+  ezeo keywords aqua            # Specific project
+  ezeo keywords -n 50           # Top 50 keywords
+  ezeo keywords --json`
+  )
+  .action((project: string | undefined, opts: { json?: boolean; limit?: string }) =>
+    keywordsCommand(project, {
+      json: opts.json,
+      limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
+    })
+  );
 
 // ---- doctor ----
 program

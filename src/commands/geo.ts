@@ -12,7 +12,7 @@ const lime = chalk.hex("#7CE850");
 const warn = chalk.hex("#FF9500");
 const danger = chalk.hex("#FF3B30");
 
-function citationRateColor(rate: number): chalk.Chalk {
+function citationRateColor(rate: number): typeof chalk {
   if (rate >= 50) return lime;
   if (rate >= 20) return warn;
   return danger;

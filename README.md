@@ -68,7 +68,13 @@ ezeo chat
 | `ezeo projects` | List all your projects |
 | `ezeo projects use <name>` | Set default project |
 | `ezeo status [project]` | Dashboard overview with WoW deltas |
+| `ezeo keywords [project]` | Top ranking keywords with position changes |
+| `ezeo geo [project]` | AI visibility / citation metrics |
+| `ezeo cro [project]` | CRO audit scores and findings |
+| `ezeo alerts [project]` | Recent alerts and insights |
+| `ezeo report [project]` | Full performance report |
 | `ezeo chat` | Interactive conversational mode |
+| `ezeo doctor` | Check connectivity, auth, API access |
 | `ezeo memory` | View memory system overview |
 | `ezeo memory soul` | View CLI personality config |
 | `ezeo memory <project>` | View project memory files |
@@ -141,7 +147,8 @@ This CLI gives you terminal access to all of it. No dashboards. Just ask.
 
 ## Roadmap
 
-- [x] **Phase 1** - Auth, status with WoW, rankings, GEO, insights, memory system
+- [x] **Phase 1** - Auth, status with WoW, rankings, GEO, CRO, insights, memory system
+- [x] **Phase 1.5** - Keywords command, bug fixes (position 101+ filter, keyword changes, `--json`)
 - [ ] **Phase 2** - Content generation ("write me a blog about X"), audits
 - [ ] **Phase 3** - Agent mode (proactive alerts, `ezeo watch`, scheduled reports)
 - [ ] **Phase 4** - npm publish, CI/CD integration (`ezeo audit --ci --fail-below 80`)

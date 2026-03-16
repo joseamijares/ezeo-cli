@@ -1,6 +1,6 @@
 {
   "name": "ezeo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ezeo AI CLI — Talk to your SEO data",
   "type": "module",
   "bin": {
@@ -14,7 +14,13 @@
     "lint": "eslint src/",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["seo", "geo", "ai", "cli", "ezeo"],
+  "keywords": [
+    "seo",
+    "geo",
+    "ai",
+    "cli",
+    "ezeo"
+  ],
   "author": "JAMAK AI <contacto@jamak.com.mx>",
   "license": "MIT",
   "repository": {
@@ -24,7 +30,9 @@
   "engines": {
     "node": ">=18"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
     "chalk": "^5.4.1",

@@ -435,26 +435,34 @@ export async function fetchTopKeywords(
 
     if (rkErr || !rankings || rankings.length === 0) return [];
 
-    // Get latest position per keyword
+    // Get latest + previous position per keyword (rankings sorted by check_date desc)
     const latestByKeyword = new Map<string, { position: number; check_date: string }>();
+    const previousByKeyword = new Map<string, number>();
     for (const r of rankings) {
       const kid = r.keyword_id as string;
       if (!latestByKeyword.has(kid)) {
         latestByKeyword.set(kid, { position: r.position as number, check_date: r.check_date as string });
+      } else if (!previousByKeyword.has(kid)) {
+        // Second entry for this keyword = previous position
+        previousByKeyword.set(kid, r.position as number);
       }
     }
 
     // Build keyword map
     const kwMap = new Map(keywords.map((k) => [k.id as string, k.keyword as string]));
 
-    // Sort by position and take top N
+    // Sort by position, filter out 101+ (not meaningfully ranking), take top N
     const results = Array.from(latestByKeyword.entries())
-      .map(([kid, { position }]) => ({
-        keyword: kwMap.get(kid) ?? "unknown",
-        position,
-        previousPosition: null as number | null,
-        change: null as number | null,
-      }))
+      .map(([kid, { position }]) => {
+        const prev = previousByKeyword.get(kid) ?? null;
+        return {
+          keyword: kwMap.get(kid) ?? "unknown",
+          position,
+          previousPosition: prev,
+          change: prev != null ? position - prev : null,
+        };
+      })
+      .filter((r) => r.position <= 100)
       .sort((a, b) => a.position - b.position)
       .slice(0, limit);
 
@@ -625,6 +633,7 @@ export interface CRODeliverable {
   title: string;
   status: string;
   type: string;
+  priority: string;
   created_at: string;
 }
 
@@ -656,7 +665,7 @@ export async function fetchCRODeliverables(
     const sb = await getClient();
     const { data, error } = await sb
       .from("cro_deliverables")
-      .select("id, project_id, title, status, type, created_at")
+      .select("id, project_id, title, status, type, priority, created_at")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false });
 
