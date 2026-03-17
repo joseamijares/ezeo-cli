@@ -12,6 +12,7 @@ import {
 import { config } from "../lib/config.js";
 import { getGlobalOpts } from "../lib/globals.js";
 import { formatStatus, formatInsights, formatError } from "../lib/formatter.js";
+import { logger } from "../lib/logger.js";
 
 export async function statusCommand(
   projectName?: string,
@@ -35,7 +36,7 @@ export async function statusCommand(
       );
       if (!project) {
         spinner.fail(`Project "${projectName}" not found`);
-        console.log(
+        logger.info(
           chalk.gray(
             `  Available: ${projects.map((p) => p.name).join(", ")}`
           )
@@ -123,10 +124,10 @@ export async function statusCommand(
       return;
     }
 
-    console.log(formatStatus(project, gscWoW, ga4WoW, geo, rankings, topKeywords));
+    logger.info(formatStatus(project, gscWoW, ga4WoW, geo, rankings, topKeywords));
 
     if (insights.length > 0) {
-      console.log(formatInsights(insights));
+      logger.info(formatInsights(insights));
     }
   } catch (err) {
     spinner.fail("Failed to load status");
