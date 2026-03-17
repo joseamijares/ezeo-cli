@@ -3,12 +3,12 @@ import Table from "cli-table3";
 import type {
   Project,
   GSCMetrics,
+  GSCMetricsWoW,
+  GA4MetricsWoW,
   GA4Metrics,
   GEOMetrics,
   RankingsSummary,
   Insight,
-  GSCMetricsWoW,
-  GA4MetricsWoW,
   MetricDelta,
   TopKeyword,
 } from "./api.js";
@@ -314,4 +314,115 @@ function timeAgo(date: Date): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+// ---- New formatters for smart chat ----
+
+export function formatTip(text: string): string {
+  return `\n  ${chalk.hex("#F5E642")("💡")} ${chalk.gray(text)}\n`;
+}
+
+export function formatSuggestions(project: Project, suggestions: string[]): string {
+  if (suggestions.length === 0) {
+    return [
+      "",
+      lemon.bold(`  ${project.name} — Recommendations`),
+      "",
+      chalk.gray("    Everything looks healthy! No urgent actions detected."),
+      chalk.gray("    Run 'status' for a full overview or 'compare' for trends."),
+      "",
+    ].join("\n");
+  }
+
+  const lines: string[] = [
+    "",
+    lemon.bold(`  ${project.name} — Recommendations`),
+    "",
+  ];
+
+  suggestions.forEach((s, i) => {
+    const icon = i === 0 ? chalk.hex("#FF3B30")("→") : i < 3 ? warn("→") : chalk.gray("→");
+    lines.push(`  ${icon} ${chalk.white(s)}`);
+    lines.push("");
+  });
+
+  return lines.join("\n");
+}
+
+export function formatCompare(
+  project: Project,
+  gscWoW: GSCMetricsWoW,
+  ga4WoW: GA4MetricsWoW,
+): string {
+  const lines: string[] = [
+    "",
+    lemon.bold(`  ${project.name} — Week-over-Week`),
+    "",
+  ];
+
+  if (gscWoW.current.hasData) {
+    lines.push(cyan.bold("  Search Console"));
+    lines.push(formatMetricRow("Clicks", gscWoW.previous.clicks, gscWoW.current.clicks, gscWoW.delta.clicks.pct));
+    lines.push(formatMetricRow("Impressions", gscWoW.previous.impressions, gscWoW.current.impressions, gscWoW.delta.impressions.pct));
+    lines.push(formatMetricRow("CTR", gscWoW.previous.ctr * 100, gscWoW.current.ctr * 100, gscWoW.delta.ctr.pct, true));
+    lines.push(formatMetricRow("Avg Position", gscWoW.previous.position, gscWoW.current.position, gscWoW.delta.position.pct, true, true));
+    lines.push("");
+  }
+
+  if (ga4WoW.current.hasData) {
+    lines.push(cyan.bold("  Analytics"));
+    lines.push(formatMetricRow("Sessions", ga4WoW.previous.sessions, ga4WoW.current.sessions, ga4WoW.delta.sessions.pct));
+    lines.push(formatMetricRow("Pageviews", ga4WoW.previous.pageviews, ga4WoW.current.pageviews, ga4WoW.delta.pageviews.pct));
+    lines.push(formatMetricRow("Bounce Rate", ga4WoW.previous.bounceRate, ga4WoW.current.bounceRate, ga4WoW.delta.bounceRate.pct, true, true));
+    lines.push("");
+  }
+
+  if (!gscWoW.current.hasData && !ga4WoW.current.hasData) {
+    lines.push(chalk.gray("    No data available for comparison."));
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+function formatMetricRow(
+  label: string,
+  previous: number,
+  current: number,
+  pctChange: number | null,
+  isPercent: boolean = false,
+  invertGood: boolean = false,
+): string {
+  const prevStr = isPercent ? previous.toFixed(1) + "%" : fmtNum(previous);
+  const currStr = isPercent ? current.toFixed(1) + "%" : fmtNum(current);
+
+  let changeStr: string;
+  if (pctChange === null) {
+    changeStr = chalk.gray("  --");
+  } else if (Math.abs(pctChange) < 0.1) {
+    changeStr = chalk.gray("  0%");
+  } else {
+    const positive = pctChange > 0;
+    const arrow = positive ? "▲" : "▼";
+    const absStr = Math.abs(pctChange).toFixed(1) + "%";
+    const isGood = invertGood ? !positive : positive;
+    const color = isGood ? chalk.hex("#7CE850") : chalk.hex("#FF3B30");
+    changeStr = color(` ${arrow} ${positive ? "+" : "-"}${absStr}`);
+  }
+
+  return `    ${chalk.white(label.padEnd(16))} ${chalk.gray(prevStr.padStart(8))} → ${chalk.white.bold(currStr.padStart(8))}${changeStr}`;
+}
+
+export function formatWelcomeTips(): string {
+  return [
+    chalk.gray("   ┌─────────────────────────────────────────────┐"),
+    chalk.gray("   │") + lemon("  Quick start:                               ") + chalk.gray("│"),
+    chalk.gray("   │") + chalk.white("  status     ") + chalk.gray("Full project dashboard         │"),
+    chalk.gray("   │") + chalk.white("  traffic    ") + chalk.gray("Search Console + Analytics      │"),
+    chalk.gray("   │") + chalk.white("  suggest    ") + chalk.gray("Smart recommendations          │"),
+    chalk.gray("   │") + chalk.white("  geo        ") + chalk.gray("AI visibility & citations      │"),
+    chalk.gray("   │") + chalk.gray("                                             │"),
+    chalk.gray("   │") + chalk.gray("  Or ask naturally: \"how's aquaprovac?\"       │"),
+    chalk.gray("   └─────────────────────────────────────────────┘"),
+  ].join("\n");
 }

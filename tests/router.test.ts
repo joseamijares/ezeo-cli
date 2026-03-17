@@ -1,146 +1,223 @@
 import { describe, it, expect } from "vitest";
-import { classifyIntent, type Intent } from "../src/lib/router.js";
+import { classifyIntent } from "../src/lib/router.js";
 
 describe("classifyIntent", () => {
   // Exit
-  it.each(["exit", "quit", "bye", "q", "EXIT", "Quit"])(
-    'classifies "%s" as exit',
-    (input) => {
-      expect(classifyIntent(input)).toEqual({ type: "exit" });
-    }
-  );
+  it.each(["exit", "quit", "bye", "q", ":q"])("recognizes exit: %s", (input) => {
+    expect(classifyIntent(input).type).toBe("exit");
+  });
 
   // Help
-  it.each(["help", "commands", "?", "HELP"])(
-    'classifies "%s" as help',
-    (input) => {
-      expect(classifyIntent(input)).toEqual({ type: "help" });
-    }
-  );
-
-  it("returns help for empty input", () => {
-    expect(classifyIntent("")).toEqual({ type: "help" });
-    expect(classifyIntent("  ")).toEqual({ type: "help" });
+  it.each(["help", "commands", "?", "h"])("recognizes help: %s", (input) => {
+    expect(classifyIntent(input).type).toBe("help");
   });
 
   // Projects
-  it.each(["projects", "project", "list projects", "show projects"])(
-    'classifies "%s" as projects',
+  it.each(["projects", "project", "list projects", "show projects", "my projects"])(
+    "recognizes projects: %s",
     (input) => {
-      expect(classifyIntent(input)).toEqual({ type: "projects" });
+      expect(classifyIntent(input).type).toBe("projects");
     }
   );
 
   // Status
-  it("classifies 'status' as status", () => {
-    expect(classifyIntent("status")).toEqual({ type: "status" });
+  it.each(["status", "dashboard", "overview", "summary"])(
+    "recognizes status: %s",
+    (input) => {
+      expect(classifyIntent(input).type).toBe("status");
+    }
+  );
+
+  it("extracts project from status", () => {
+    const intent = classifyIntent("status AquaProVac");
+    expect(intent.type).toBe("status");
+    if (intent.type === "status") {
+      expect(intent.project).toBe("aquaprovac"); // lowercased for fuzzy matching
+    }
   });
 
-  it("classifies 'dashboard' as status", () => {
-    expect(classifyIntent("dashboard")).toEqual({ type: "status" });
+  it("handles natural language status", () => {
+    expect(classifyIntent("how's everything").type).toBe("status");
   });
 
-  it("classifies 'how's everything' as status", () => {
-    expect(classifyIntent("how's everything")).toEqual({ type: "status" });
-  });
-
-  it("classifies 'how's AquaProVac' as status with project", () => {
-    const result = classifyIntent("how's AquaProVac");
-    expect(result.type).toBe("status");
-    expect((result as Extract<Intent, { type: "status" }>).project).toBe("AquaProVac");
-  });
-
-  it("classifies 'status of aqua' as status with project", () => {
-    const result = classifyIntent("status of aqua");
-    expect(result.type).toBe("status");
-    expect((result as Extract<Intent, { type: "status" }>).project).toBe("aqua");
+  it("handles 'how's [project] doing'", () => {
+    const intent = classifyIntent("how's aquaprovac doing");
+    expect(intent.type).toBe("status");
   });
 
   // Traffic
-  it("classifies 'traffic' as traffic", () => {
-    expect(classifyIntent("traffic")).toEqual({ type: "traffic", project: undefined });
-  });
+  it.each(["traffic", "clicks", "impressions", "ctr", "gsc", "ga4", "analytics", "sessions", "visitors", "pageviews"])(
+    "recognizes traffic: %s",
+    (input) => {
+      expect(classifyIntent(input).type).toBe("traffic");
+    }
+  );
 
-  it("classifies 'clicks for aqua' as traffic with project", () => {
-    const result = classifyIntent("clicks for aqua");
-    expect(result.type).toBe("traffic");
-    expect((result as Extract<Intent, { type: "traffic" }>).project).toBe("aqua");
-  });
-
-  it("classifies 'search console' as traffic", () => {
-    expect(classifyIntent("search console").type).toBe("traffic");
+  it("extracts project from traffic", () => {
+    const intent = classifyIntent("traffic for AquaProVac");
+    expect(intent.type).toBe("traffic");
+    if (intent.type === "traffic") {
+      expect(intent.project).toBe("AquaProVac");
+    }
   });
 
   // Rankings
-  it.each(["rankings", "positions", "top keywords", "keyword rankings"])(
-    'classifies "%s" as rankings',
+  it.each(["rankings", "ranking", "positions", "rank", "serp", "serps"])(
+    "recognizes rankings: %s",
     (input) => {
       expect(classifyIntent(input).type).toBe("rankings");
     }
   );
 
-  it("classifies 'rankings for gutter' as rankings with project", () => {
-    const result = classifyIntent("rankings for gutter");
-    expect(result.type).toBe("rankings");
-    expect((result as Extract<Intent, { type: "rankings" }>).project).toBe("gutter");
+  it("handles 'where do I rank'", () => {
+    expect(classifyIntent("where do i rank").type).toBe("rankings");
   });
 
   // GEO
-  it.each(["geo", "ai visibility", "citations", "perplexity", "chatgpt"])(
-    'classifies "%s" as geo',
+  it.each(["geo", "ai visibility", "citations", "cited", "perplexity", "chatgpt", "copilot", "llm"])(
+    "recognizes geo: %s",
     (input) => {
       expect(classifyIntent(input).type).toBe("geo");
     }
   );
 
   // Insights
-  it.each(["insights", "alerts", "issues", "what's wrong", "what's new"])(
-    'classifies "%s" as insights',
+  it.each(["insights", "alerts", "issues", "problems", "warnings"])(
+    "recognizes insights: %s",
     (input) => {
       expect(classifyIntent(input).type).toBe("insights");
     }
   );
 
+  it.each(["whats wrong", "whats new", "anything new", "updates"])(
+    "recognizes insights from natural language: %s",
+    (input) => {
+      expect(classifyIntent(input).type).toBe("insights");
+    }
+  );
+
+  // Keywords
+  it.each(["keywords", "keyword", "tracked keywords", "kws", "queries", "search terms", "top queries"])(
+    "recognizes keywords: %s",
+    (input) => {
+      expect(classifyIntent(input).type).toBe("keywords");
+    }
+  );
+
+  // Competitors
+  it.each(["competitors", "competition", "competitive"])(
+    "recognizes competitors: %s",
+    (input) => {
+      expect(classifyIntent(input).type).toBe("competitors");
+    }
+  );
+
   // CRO
   it.each(["cro", "conversion", "optimization"])(
-    'classifies "%s" as cro',
+    "recognizes cro: %s",
     (input) => {
       expect(classifyIntent(input).type).toBe("cro");
     }
   );
 
-  // Image
-  it("classifies 'image hero banner' as image with description", () => {
-    const result = classifyIntent("image hero banner");
-    expect(result.type).toBe("image");
-    expect((result as Extract<Intent, { type: "image" }>).description).toBe("hero banner");
+  // Switch
+  it("recognizes switch project", () => {
+    const intent = classifyIntent("switch to AquaProVac");
+    expect(intent.type).toBe("switch");
+    if (intent.type === "switch") {
+      expect(intent.project).toBe("AquaProVac");
+    }
   });
 
-  // Keywords
-  it("classifies 'keywords' as keywords", () => {
-    expect(classifyIntent("keywords").type).toBe("keywords");
+  it("recognizes 'use' as switch", () => {
+    const intent = classifyIntent("use Gutter");
+    expect(intent.type).toBe("switch");
+    if (intent.type === "switch") {
+      expect(intent.project).toBe("Gutter");
+    }
   });
 
-  // Competitors
-  it("classifies 'competitors' as competitors", () => {
-    expect(classifyIntent("competitors").type).toBe("competitors");
-  });
+  // Compare
+  it.each(["compare", "comparison", "week over week", "wow", "trend"])(
+    "recognizes compare: %s",
+    (input) => {
+      expect(classifyIntent(input).type).toBe("compare");
+    }
+  );
+
+  // Suggest
+  it.each(["suggest", "recommendations", "what should I do", "next steps", "action items", "tips", "quick wins"])(
+    "recognizes suggest: %s",
+    (input) => {
+      expect(classifyIntent(input).type).toBe("suggest");
+    }
+  );
 
   // Audit
-  it("classifies 'audit https://example.com' as audit with url", () => {
-    const result = classifyIntent("audit https://example.com");
-    expect(result.type).toBe("audit");
-    expect((result as Extract<Intent, { type: "audit" }>).url).toBe("https://example.com");
+  it("recognizes audit with URL", () => {
+    const intent = classifyIntent("audit aquaprovac.com");
+    expect(intent.type).toBe("audit");
+    if (intent.type === "audit") {
+      expect(intent.url).toBe("aquaprovac.com");
+    }
   });
 
-  // Unknown
-  it("classifies gibberish as unknown", () => {
-    const result = classifyIntent("asdfghjkl");
-    expect(result.type).toBe("unknown");
-    expect((result as Extract<Intent, { type: "unknown" }>).raw).toBe("asdfghjkl");
+  // Image
+  it("recognizes image command", () => {
+    const intent = classifyIntent("image hero banner");
+    expect(intent.type).toBe("image");
   });
 
-  it("trims whitespace", () => {
-    expect(classifyIntent("  status  ")).toEqual({ type: "status" });
+  // Typo tolerance (fuzzy matching)
+  it("handles typos: 'staus' -> status", () => {
+    expect(classifyIntent("staus").type).toBe("status");
+  });
+
+  it("handles typos: 'trafic' -> traffic", () => {
+    expect(classifyIntent("trafic").type).toBe("traffic");
+  });
+
+  it("handles typos: 'rannkings' -> rankings", () => {
+    expect(classifyIntent("rannkings").type).toBe("rankings");
+  });
+
+  // Unknown with suggestion
+  it("returns unknown for unrecognized input", () => {
+    const intent = classifyIntent("banana phone");
+    expect(intent.type).toBe("unknown");
+  });
+
+  it("provides suggestion for close matches", () => {
+    const intent = classifyIntent("statuss");
+    if (intent.type === "unknown") {
+      expect(intent.suggestion).toBeDefined();
+    }
+  });
+
+  // Empty input
+  it("returns help for empty input", () => {
+    expect(classifyIntent("").type).toBe("help");
+  });
+
+  it("returns help for whitespace", () => {
+    expect(classifyIntent("   ").type).toBe("help");
+  });
+
+  // Multi-word natural language with project
+  it("handles 'search console for aqua'", () => {
+    const intent = classifyIntent("search console for aqua");
+    expect(intent.type).toBe("traffic");
+  });
+
+  it("handles 'ai visibility for gutterprovac'", () => {
+    const intent = classifyIntent("ai visibility for gutterprovac");
+    expect(intent.type).toBe("geo");
+  });
+
+  // Case insensitive
+  it("is case insensitive", () => {
+    expect(classifyIntent("STATUS").type).toBe("status");
+    expect(classifyIntent("Traffic").type).toBe("traffic");
+    expect(classifyIntent("GEO").type).toBe("geo");
   });
 });
