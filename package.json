@@ -13,7 +13,8 @@
     "test": "vitest run",
     "lint": "eslint src/",
     "prepublishOnly": "npm run build",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint:fix": "eslint src/ --fix"
   },
   "keywords": [
     "seo",
@@ -45,7 +46,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.13.0",
-    "eslint": "^9.20.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.1",
+    "@typescript-eslint/parser": "^8.57.1",
+    "eslint": "^9.39.4",
     "tsup": "^8.4.0",
     "typescript": "^5.7.3",
     "vitest": "^3.2.4"
