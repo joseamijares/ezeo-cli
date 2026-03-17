@@ -1,0 +1,19 @@
+.github/
+.gitignore
+CHANGELOG.md
+LICENSE
+README.md
+
+# Source
+src/
+
+# Compiled
+dist/
+
+# Config
+package.json
+package-lock.json
+eslint.config.mjs
+tsconfig.json
+tsup.config.ts
+vitest.config.ts
