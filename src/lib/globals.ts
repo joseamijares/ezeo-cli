@@ -6,6 +6,7 @@ export interface GlobalOpts {
   json: boolean;
   noColor: boolean;
   quiet: boolean;
+  verbose: boolean;
   project?: string;
   format: "text" | "json" | "md";
 }
@@ -14,6 +15,7 @@ const _opts: GlobalOpts = {
   json: false,
   noColor: false,
   quiet: false,
+  verbose: false,
   project: undefined,
   format: "text",
 };
@@ -30,4 +32,11 @@ export function setGlobalOpts(partial: Partial<GlobalOpts>): void {
 
 export function getGlobalOpts(): Readonly<GlobalOpts> {
   return _opts;
+}
+
+/** Log a debug message — only visible when --verbose is set. */
+export function debug(...args: unknown[]): void {
+  if (_opts.verbose) {
+    process.stderr.write(`[debug] ${args.map(String).join(" ")}\n`);
+  }
 }

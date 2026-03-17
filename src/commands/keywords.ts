@@ -19,7 +19,7 @@ function positionColor(pos: number): string {
   return chalk.gray(String(pos));
 }
 
-function changeIndicator(change: number | null): string {
+export function changeIndicator(change: number | null): string {
   if (change === null) return chalk.gray("NEW");
   if (change < 0) return lime(`▲ ${Math.abs(change)}`); // improved (moved up)
   if (change > 0) return danger(`▼ ${change}`); // dropped
@@ -33,7 +33,7 @@ export async function keywordsCommand(
   const globalOpts = getGlobalOpts();
   const useJson = opts?.json || globalOpts.json;
   const limit = opts?.limit ?? 20;
-  const spinner = ora("Loading keywords...").start();
+  const spinner = ora({ text: "Loading keywords...", stream: process.stderr }).start();
 
   try {
     const projects = await fetchProjects();

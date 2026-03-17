@@ -20,7 +20,7 @@ export async function statusCommand(
   // Merge with global opts (Commander doesn't always pass global --json to subcommands)
   const globalOpts = getGlobalOpts();
   const useJson = jsonOutput || globalOpts.json;
-  const spinner = ora("Loading...").start();
+  const spinner = ora({ text: "Loading...", stream: process.stderr }).start();
 
   try {
     const projects = await fetchProjects();

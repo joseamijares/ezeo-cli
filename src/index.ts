@@ -44,6 +44,7 @@ program
   .option("--json", "Output as machine-readable JSON")
   .option("--no-color", "Disable colors (for piping)")
   .option("-q, --quiet", "Suppress non-essential output")
+  .option("-v, --verbose", "Enable verbose debug logging")
   .option("--project <name>", "Override default project for this command")
   .option("--format <format>", "Output format: text, json, md", "text")
   .hook("preAction", (thisCommand) => {
@@ -51,6 +52,7 @@ program
       json?: boolean;
       color?: boolean;
       quiet?: boolean;
+      verbose?: boolean;
       project?: string;
       format?: string;
     };
@@ -58,6 +60,7 @@ program
       json: opts.json ?? false,
       noColor: opts.color === false,
       quiet: opts.quiet ?? false,
+      verbose: opts.verbose ?? false,
       project: opts.project,
       format: (opts.format as "text" | "json" | "md") ?? "text",
     });

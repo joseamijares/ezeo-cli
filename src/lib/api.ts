@@ -406,14 +406,21 @@ export async function fetchTopKeywords(
     });
 
     if (!error && data && data.length > 0) {
-      return data.map((row: Record<string, unknown>) => ({
-        keyword: row.keyword as string,
-        position: row.position as number,
-        previousPosition: (row.previous_position as number) ?? null,
-        change: row.previous_position != null
-          ? (row.position as number) - (row.previous_position as number)
-          : null,
-      }));
+      return data
+        .filter((row: Record<string, unknown>) => Number(row.position) <= 100)
+        .map((row: Record<string, unknown>) => {
+          const pos = Number(row.position);
+          const prevPos =
+            row.previous_position != null && Number(row.previous_position) > 0
+              ? Number(row.previous_position)
+              : null;
+          return {
+            keyword: row.keyword as string,
+            position: pos,
+            previousPosition: prevPos,
+            change: prevPos != null ? pos - prevPos : null,
+          };
+        });
     }
 
     // Fallback: manual join via two queries
