@@ -683,3 +683,282 @@ export async function fetchCRODeliverables(
     throw new Error(`Network error fetching CRO deliverables: ${String(err)}`);
   }
 }
+
+// ---- Content ----
+
+export interface ContentOpportunity {
+  keywordId: string;
+  keyword: string;
+  searchVolume: number;
+  currentPosition: number;
+}
+
+export async function fetchContentOpportunities(
+  projectId: string,
+  limit: number = 50
+): Promise<ContentOpportunity[]> {
+  try {
+    const sb = await getClient();
+
+    // Try RPC first
+    const { data: rpcData, error: rpcError } = await sb.rpc("get_content_opportunities", {
+      p_project_id: projectId,
+      p_limit: limit,
+    });
+
+    if (!rpcError && rpcData && (rpcData as unknown[]).length > 0) {
+      return (rpcData as Record<string, unknown>[])
+        .filter((row) => Number(row.position) > 10 && Number(row.search_volume) > 100)
+        .map((row) => ({
+          keywordId: row.keyword_id as string,
+          keyword: row.keyword as string,
+          searchVolume: Number(row.search_volume),
+          currentPosition: Number(row.position),
+        }))
+        .sort((a, b) => b.searchVolume - a.searchVolume)
+        .slice(0, limit);
+    }
+
+    // Fallback: keywords + rankings join
+    const { data: keywords, error: kwErr } = await sb
+      .from("keywords")
+      .select("id, keyword, search_volume")
+      .eq("project_id", projectId)
+      .limit(500);
+
+    if (kwErr || !keywords || keywords.length === 0) return [];
+
+    const keywordIds = keywords.map((k) => k.id as string);
+    const { data: rankings, error: rkErr } = await sb
+      .from("rankings")
+      .select("keyword_id, position, check_date")
+      .in("keyword_id", keywordIds)
+      .not("position", "is", null)
+      .order("check_date", { ascending: false });
+
+    if (rkErr || !rankings || rankings.length === 0) return [];
+
+    const latestByKeyword = new Map<string, number>();
+    for (const r of rankings) {
+      const kid = r.keyword_id as string;
+      if (!latestByKeyword.has(kid)) {
+        latestByKeyword.set(kid, r.position as number);
+      }
+    }
+
+    const kwMap = new Map(
+      keywords.map((k) => [
+        k.id as string,
+        { keyword: k.keyword as string, searchVolume: Number(k.search_volume ?? 0) },
+      ])
+    );
+
+    return Array.from(latestByKeyword.entries())
+      .filter(([kid, pos]) => {
+        const kw = kwMap.get(kid);
+        return pos > 10 && pos <= 100 && kw && kw.searchVolume > 100;
+      })
+      .map(([kid, pos]) => {
+        const kw = kwMap.get(kid)!;
+        return {
+          keywordId: kid,
+          keyword: kw.keyword,
+          searchVolume: kw.searchVolume,
+          currentPosition: pos,
+        };
+      })
+      .sort((a, b) => b.searchVolume - a.searchVolume)
+      .slice(0, limit);
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error(`Network error fetching content opportunities: ${String(err)}`);
+  }
+}
+
+export interface KeywordBriefData {
+  targetKeyword: string;
+  keywordId: string;
+  currentPosition: number | null;
+  searchVolume: number;
+  relatedKeywords: Array<{ keyword: string; searchVolume: number; currentPosition: number | null }>;
+  competitorUrls: string[];
+}
+
+export async function fetchKeywordBriefData(
+  projectId: string,
+  keyword: string
+): Promise<KeywordBriefData | null> {
+  try {
+    const sb = await getClient();
+
+    // Find the target keyword (fuzzy match)
+    const { data: kwData, error: kwErr } = await sb
+      .from("keywords")
+      .select("id, keyword, search_volume")
+      .eq("project_id", projectId)
+      .ilike("keyword", `%${keyword}%`)
+      .order("search_volume", { ascending: false })
+      .limit(1);
+
+    if (kwErr || !kwData || kwData.length === 0) return null;
+
+    const targetKw = kwData[0];
+    const kwId = targetKw.id as string;
+
+    // Get latest ranking and competitor URLs
+    const { data: rankings, error: rkErr } = await sb
+      .from("rankings")
+      .select("position, check_date, url")
+      .eq("keyword_id", kwId)
+      .order("check_date", { ascending: false })
+      .limit(10);
+
+    const currentPosition =
+      !rkErr && rankings && rankings.length > 0 ? (rankings[0].position as number) : null;
+
+    const competitorUrls = rankings
+      ? [...new Set(rankings.map((r) => r.url as string).filter(Boolean))].slice(0, 5)
+      : [];
+
+    // Get related keywords (same project, sorted by volume)
+    const { data: relatedData, error: relErr } = await sb
+      .from("keywords")
+      .select("id, keyword, search_volume")
+      .eq("project_id", projectId)
+      .neq("id", kwId)
+      .gt("search_volume", 0)
+      .order("search_volume", { ascending: false })
+      .limit(20);
+
+    let relatedKeywords: KeywordBriefData["relatedKeywords"] = [];
+
+    if (!relErr && relatedData && relatedData.length > 0) {
+      const relatedIds = relatedData.map((k) => k.id as string);
+      const { data: relRankings } = await sb
+        .from("rankings")
+        .select("keyword_id, position, check_date")
+        .in("keyword_id", relatedIds)
+        .order("check_date", { ascending: false });
+
+      const latestRelRankings = new Map<string, number | null>();
+      for (const r of relRankings ?? []) {
+        const kid = r.keyword_id as string;
+        if (!latestRelRankings.has(kid)) {
+          latestRelRankings.set(kid, r.position as number);
+        }
+      }
+
+      relatedKeywords = relatedData.slice(0, 10).map((k) => ({
+        keyword: k.keyword as string,
+        searchVolume: Number(k.search_volume ?? 0),
+        currentPosition: latestRelRankings.get(k.id as string) ?? null,
+      }));
+    }
+
+    return {
+      targetKeyword: targetKw.keyword as string,
+      keywordId: kwId,
+      currentPosition,
+      searchVolume: Number(targetKw.search_volume ?? 0),
+      relatedKeywords,
+      competitorUrls,
+    };
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error(`Network error fetching keyword brief: ${String(err)}`);
+  }
+}
+
+export interface PageAuditEntry {
+  keywordId: string;
+  keyword: string;
+  url: string | null;
+  currentPosition: number;
+  previousPosition: number;
+  positionChange: number; // positive = dropped (worse)
+  latestCheckDate: string;
+}
+
+export async function fetchDecliningPages(
+  projectId: string,
+  minDrop: number = 3
+): Promise<PageAuditEntry[]> {
+  try {
+    const sb = await getClient();
+
+    const { data: keywords, error: kwErr } = await sb
+      .from("keywords")
+      .select("id, keyword")
+      .eq("project_id", projectId)
+      .limit(500);
+
+    if (kwErr || !keywords || keywords.length === 0) return [];
+
+    const keywordIds = keywords.map((k) => k.id as string);
+
+    // Fetch last 60 days to compare current vs ~30d ago
+    const since = new Date();
+    since.setDate(since.getDate() - 60);
+
+    const { data: rankings, error: rkErr } = await sb
+      .from("rankings")
+      .select("keyword_id, position, check_date, url")
+      .in("keyword_id", keywordIds)
+      .not("position", "is", null)
+      .gte("check_date", since.toISOString().split("T")[0])
+      .order("check_date", { ascending: false });
+
+    if (rkErr || !rankings || rankings.length === 0) return [];
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().split("T")[0];
+
+    // Split into recent (last 30d) and older (30-60d ago)
+    const recentRankings = new Map<string, { position: number; date: string; url: string | null }>();
+    const olderRankings = new Map<string, { position: number }>();
+
+    for (const r of rankings) {
+      const kid = r.keyword_id as string;
+      const dateStr = r.check_date as string;
+      if (dateStr >= cutoffStr) {
+        if (!recentRankings.has(kid)) {
+          recentRankings.set(kid, {
+            position: r.position as number,
+            date: dateStr,
+            url: (r.url as string) ?? null,
+          });
+        }
+      } else {
+        if (!olderRankings.has(kid)) {
+          olderRankings.set(kid, { position: r.position as number });
+        }
+      }
+    }
+
+    const kwMap = new Map(keywords.map((k) => [k.id as string, k.keyword as string]));
+
+    return Array.from(recentRankings.entries())
+      .filter(([kid, recent]) => {
+        const older = olderRankings.get(kid);
+        if (!older) return false;
+        return recent.position - older.position >= minDrop;
+      })
+      .map(([kid, recent]) => {
+        const older = olderRankings.get(kid)!;
+        return {
+          keywordId: kid,
+          keyword: kwMap.get(kid) ?? "unknown",
+          url: recent.url,
+          currentPosition: recent.position,
+          previousPosition: older.position,
+          positionChange: recent.position - older.position,
+          latestCheckDate: recent.date,
+        };
+      })
+      .sort((a, b) => b.positionChange - a.positionChange);
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error(`Network error fetching declining pages: ${String(err)}`);
+  }
+}
