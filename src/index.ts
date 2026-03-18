@@ -17,6 +17,11 @@ import { alertsCommand } from "./commands/alerts.js";
 import { geoCommand } from "./commands/geo.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { keywordsCommand } from "./commands/keywords.js";
+import {
+  contentSuggestCommand,
+  contentBriefCommand,
+  contentAuditCommand,
+} from "./commands/content.js";
 import { config } from "./lib/config.js";
 import { setGlobalOpts } from "./lib/globals.js";
 
@@ -227,6 +232,77 @@ Examples:
     keywordsCommand(project, {
       json: opts.json,
       limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
+    })
+  );
+
+// ---- content ----
+const contentCmd = program
+  .command("content")
+  .description("Content generation tools — topic suggestions, briefs, and audits")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo content suggest           # Topic ideas from keyword gaps
+  ezeo content brief "seo tips"  # Content brief for a keyword
+  ezeo content audit             # Audit pages with declining rankings`
+  );
+
+contentCmd
+  .command("suggest [project]")
+  .description("Suggest blog topics based on keyword gaps and search volume")
+  .option("--json", "Output as machine-readable JSON")
+  .option("-n, --limit <number>", "Number of suggestions to show", "10")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo content suggest
+  ezeo content suggest aqua
+  ezeo content suggest -n 5
+  ezeo content suggest --json`
+  )
+  .action((project: string | undefined, opts: { json?: boolean; limit?: string }) =>
+    contentSuggestCommand(project, {
+      json: opts.json,
+      limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
+    })
+  );
+
+contentCmd
+  .command("brief <keyword> [project]")
+  .description("Generate a content brief for a given keyword")
+  .option("--json", "Output as machine-readable JSON")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo content brief "technical seo"
+  ezeo content brief "keyword research" aqua
+  ezeo content brief "seo audit" --json`
+  )
+  .action((keyword: string, project: string | undefined, opts: { json?: boolean }) =>
+    contentBriefCommand(keyword, project, opts)
+  );
+
+contentCmd
+  .command("audit [project]")
+  .description("Audit blog content by checking for pages with declining rankings")
+  .option("--json", "Output as machine-readable JSON")
+  .option("--min-drop <number>", "Minimum position drop to flag (default: 3)", "3")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo content audit
+  ezeo content audit aqua
+  ezeo content audit --min-drop 5
+  ezeo content audit --json`
+  )
+  .action((project: string | undefined, opts: { json?: boolean; minDrop?: string }) =>
+    contentAuditCommand(project, {
+      json: opts.json,
+      minDrop: opts.minDrop ? parseInt(opts.minDrop, 10) : undefined,
     })
   );
 
