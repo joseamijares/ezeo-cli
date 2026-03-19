@@ -36,6 +36,7 @@
     "dist"
   ],
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@supabase/supabase-js": "^2.49.4",
     "chalk": "^5.4.1",
     "cli-table3": "^0.6.5",

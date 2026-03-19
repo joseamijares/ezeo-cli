@@ -6,6 +6,7 @@ import { logoutCommand } from "./commands/logout.js";
 import { projectsCommand, useProjectCommand } from "./commands/projects.js";
 import { statusCommand } from "./commands/status.js";
 import { chatCommand } from "./commands/chat.js";
+import { agentCommand } from "./commands/agent.js";
 import { whoamiCommand } from "./commands/whoami.js";
 import { memoryCommand } from "./commands/memory.js";
 import { croCommand } from "./commands/cro.js";
@@ -343,6 +344,22 @@ Examples:
   ezeo image "hero banner for aquaprovac.com"`
   )
   .action((description?: string) => imageCommand(description));
+
+// ---- agent ----
+program
+  .command("agent [project]")
+  .description("AI agent mode — natural language queries with automatic data chaining")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo agent                    # Start agent with default project
+  ezeo agent aqua               # Start agent focused on Aqua project
+  ezeo agent                    # Then ask: "What's driving my traffic drop?"
+
+Requires ANTHROPIC_API_KEY in ~/.ezeo/.env`
+  )
+  .action((project?: string) => agentCommand(project));
 
 // ---- chat ----
 program
