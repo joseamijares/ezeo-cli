@@ -18,6 +18,9 @@ import { alertsCommand } from "./commands/alerts.js";
 import { geoCommand } from "./commands/geo.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { keywordsCommand } from "./commands/keywords.js";
+import { agentCardCommand } from "./commands/agent-card.js";
+import { mcpServeCommand } from "./commands/mcp-serve.js";
+import { clearCache } from "./lib/cache.js";
 import {
   contentSuggestCommand,
   contentBriefCommand,
@@ -438,6 +441,69 @@ Examples:
   ezeo api-key revoke abc123`
   )
   .action((keyId: string) => apiKeyRevokeCommand(keyId));
+
+// ---- agent-card ----
+program
+  .command("agent-card")
+  .description("Generate an A2A-compatible agent card JSON (.well-known/agent-card.json)")
+  .option("--output <path>", "Output file path", ".well-known/agent-card.json")
+  .option("--print", "Print JSON to stdout instead of writing a file")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo agent-card                                              # Write to .well-known/agent-card.json
+  ezeo agent-card --output ./public/.well-known/agent-card.json
+  ezeo agent-card --print                                      # Print to stdout`
+  )
+  .action((opts: { output?: string; print?: boolean }) => agentCardCommand(opts));
+
+// ---- mcp-serve ----
+program
+  .command("mcp-serve")
+  .description("Start an MCP (Model Context Protocol) server over stdio for AI agent integration")
+  .option("--project <name>", "Default project for all tool calls")
+  .option("--no-cache", "Disable response caching — always fetch fresh data")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo mcp-serve                           # Start MCP server with default project
+  ezeo mcp-serve --project "Aqua Pro Vac" # Pin to specific project
+  ezeo mcp-serve --no-cache               # Bypass cache
+
+Add to Claude Desktop config (claude_desktop_config.json):
+  {
+    "mcpServers": {
+      "ezeo": {
+        "command": "ezeo",
+        "args": ["mcp-serve"]
+      }
+    }
+  }`
+  )
+  .action((opts: { project?: string; cache?: boolean }) =>
+    mcpServeCommand({ project: opts.project, noCache: opts.cache === false })
+  );
+
+// ---- cache ----
+const cacheCmd = program
+  .command("cache")
+  .description("Manage the local response cache")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo cache clear    # Wipe all cached API responses`
+  );
+
+cacheCmd
+  .command("clear")
+  .description("Clear all cached API responses")
+  .action(() => {
+    clearCache();
+    console.log(chalk.hex("#7CE850")("  ✓ Cache cleared."));
+  });
 
 // ---- version ----
 program
