@@ -2,6 +2,7 @@ import * as readline from "node:readline";
 import chalk from "chalk";
 import ora from "ora";
 import Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 import { fetchProjects, type Project } from "../lib/api.js";
 import { config, loadCredentials } from "../lib/config.js";
 import { AGENT_TOOLS, executeTool } from "../lib/agent/tools.js";
@@ -17,11 +18,147 @@ import {
 } from "../lib/agent/context.js";
 import { formatError, logo } from "../lib/formatter.js";
 import { appendToHistory, initProjectMemory } from "../lib/memory.js";
+import { MODEL_CONFIGS, ANTHROPIC_FALLBACK, getApiKey } from "../lib/models.js";
+import {
+  agentTurnWithOpenAICompat,
+  toOpenAITool,
+  type ToolDefinition,
+} from "../lib/providers/openai-compat.js";
 
 const lemon = chalk.hex("#F5E642");
 const lime = chalk.hex("#7CE850");
 
 const MAX_TOOL_ITERATIONS = 10;
+
+// ---- OpenAI-compat agent turn (MiniMax primary) --------------------------------
+
+/**
+ * Run one agentic turn using the OpenAI-compatible API (MiniMax M2.7).
+ * Manages tool call loops internally.
+ */
+async function runAgentTurnOpenAICompat(
+  apiKey: string,
+  session: AgentSession,
+  userInput: string,
+  onText: (delta: string) => void
+): Promise<void> {
+  addUserMessage(session, userInput);
+
+  const agentCfg = MODEL_CONFIGS.agent;
+  const openAiTools: ToolDefinition[] = AGENT_TOOLS.map(toOpenAITool);
+
+  // Build OpenAI-format message history from session
+  function buildOpenAIMessages(): OpenAI.Chat.ChatCompletionMessageParam[] {
+    const systemMsg: OpenAI.Chat.ChatCompletionSystemMessageParam = {
+      role: "system",
+      content: buildSystemPrompt(session.currentProjectName),
+    };
+    const history: OpenAI.Chat.ChatCompletionMessageParam[] = getMessages(session).map((m) => {
+      if (m.role === "user") {
+        if (typeof m.content === "string") {
+          return { role: "user" as const, content: m.content };
+        }
+        // Tool results — convert array content to string for OpenAI format
+        const content = Array.isArray(m.content)
+          ? m.content
+          : [m.content];
+        return { role: "user" as const, content: JSON.stringify(content) };
+      }
+      if (m.role === "assistant") {
+        if (typeof m.content === "string") {
+          return { role: "assistant" as const, content: m.content };
+        }
+        // Extract text from content blocks
+        const blocks = Array.isArray(m.content) ? m.content : [m.content];
+        const text = blocks
+          .filter((b): b is { type: "text"; text: string } => (b as { type: string }).type === "text")
+          .map((b) => b.text)
+          .join("\n");
+        return { role: "assistant" as const, content: text || null };
+      }
+      return { role: "user" as const, content: "" };
+    });
+    return [systemMsg, ...history];
+  }
+
+  // Track current OpenAI messages separately so we can append tool results
+  let currentMessages: OpenAI.Chat.ChatCompletionMessageParam[] = buildOpenAIMessages();
+
+  for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    const result = await agentTurnWithOpenAICompat(currentMessages, openAiTools, {
+      apiKey,
+      baseUrl: agentCfg.baseUrl!,
+      model: agentCfg.model,
+      maxTokens: agentCfg.maxTokens,
+      timeoutMs: 60_000,
+    });
+
+    if (result.text) {
+      onText(result.text);
+    }
+
+    if (result.stopReason === "end_turn" || result.toolCalls.length === 0) {
+      // Sync final text back to session
+      if (result.text) {
+        addAssistantMessage(session, [{ type: "text", text: result.text }]);
+      }
+      break;
+    }
+
+    // Build the assistant message with tool_calls for the OpenAI thread
+    const assistantMsg: OpenAI.Chat.ChatCompletionAssistantMessageParam = {
+      role: "assistant",
+      content: result.text || null,
+      tool_calls: result.toolCalls.map((tc) => ({
+        id: tc.id,
+        type: "function" as const,
+        function: {
+          name: tc.name,
+          arguments: JSON.stringify(tc.arguments),
+        },
+      })),
+    };
+    currentMessages.push(assistantMsg);
+
+    // Also record in session context (for memory)
+    addAssistantMessage(session, [{ type: "text", text: result.text || "" }]);
+
+    // Execute tools
+    const toolResultMessages: OpenAI.Chat.ChatCompletionToolMessageParam[] = [];
+
+    for (const toolCall of result.toolCalls) {
+      const label = toolCall.name.replace(/_/g, " ");
+      const spinner = ora({
+        text: chalk.gray(`  Fetching ${label}...`),
+        stream: process.stderr,
+      }).start();
+
+      const toolResult = await executeTool(
+        toolCall.name,
+        toolCall.arguments
+      );
+      spinner.stop();
+
+      toolResultMessages.push({
+        role: "tool" as const,
+        tool_call_id: toolCall.id,
+        content: toolResult,
+      });
+    }
+
+    currentMessages = [...currentMessages, ...toolResultMessages];
+
+    // Also record tool results in session context
+    const anthropicToolResults: Anthropic.ToolResultBlockParam[] = toolResultMessages.map((tr) => ({
+      type: "tool_result" as const,
+      tool_use_id: tr.tool_call_id,
+      content: tr.content as string,
+    }));
+    addToolResults(session, anthropicToolResults);
+  }
+}
+
+// ---- Anthropic agent turn (fallback) -------------------------------------------
 
 export async function runAgentTurn(
   client: Anthropic,
@@ -31,10 +168,13 @@ export async function runAgentTurn(
 ): Promise<void> {
   addUserMessage(session, userInput);
 
+  const model = ANTHROPIC_FALLBACK.model;
+  const maxTokens = ANTHROPIC_FALLBACK.maxTokens;
+
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     const stream = client.messages.stream({
-      model: "claude-opus-4-6",
-      max_tokens: 4096,
+      model,
+      max_tokens: maxTokens,
       system: buildSystemPrompt(session.currentProjectName),
       tools: AGENT_TOOLS,
       messages: getMessages(session),
@@ -79,6 +219,8 @@ export async function runAgentTurn(
   }
 }
 
+// ---- Project helpers -------------------------------------------------------
+
 function resolveProject(
   projects: Project[],
   nameOrDomain: string
@@ -94,6 +236,8 @@ function resolveProject(
   );
 }
 
+// ---- Main command ----------------------------------------------------------
+
 export async function agentCommand(projectArg?: string): Promise<void> {
   const creds = loadCredentials();
   if (!creds?.access_token) {
@@ -103,17 +247,27 @@ export async function agentCommand(projectArg?: string): Promise<void> {
     process.exit(1);
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  // ── Resolve which provider to use ──────────────────────────────────────────
+  const minimaxKey = getApiKey(MODEL_CONFIGS.agent);
+  const anthropicKey = getApiKey(ANTHROPIC_FALLBACK);
+
+  if (!minimaxKey && !anthropicKey) {
     console.log(
       formatError(
-        "ANTHROPIC_API_KEY not set.\n\n  Add it to ~/.ezeo/.env:\n    ANTHROPIC_API_KEY=sk-ant-..."
+        "No AI provider configured.\n\n" +
+        "  Add at least one to ~/.ezeo/.env:\n" +
+        "    MINIMAX_API_KEY=...   (primary — MiniMax M2.7)\n" +
+        "    ANTHROPIC_API_KEY=sk-ant-...   (fallback — Claude Sonnet)"
       )
     );
     process.exit(1);
   }
 
-  const client = new Anthropic({ apiKey });
+  const useMiniMax = !!minimaxKey;
+  const providerLabel = useMiniMax ? "MiniMax M2.7" : "Claude Sonnet";
+
+  // Anthropic client (kept for fallback path)
+  const anthropicClient = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
 
   const spinner = ora({ text: "Connecting...", stream: process.stderr }).start();
   let projects: Project[] = [];
@@ -144,7 +298,7 @@ export async function agentCommand(projectArg?: string): Promise<void> {
   console.log(logo());
   console.log();
   console.log(
-    `  ${lime.bold("Agent Mode")}  ${chalk.gray("—")}  ${chalk.white("Claude Opus")}`
+    `  ${lime.bold("Agent Mode")}  ${chalk.gray("—")}  ${chalk.white(providerLabel)}`
   );
   if (currentProject) {
     console.log(
@@ -196,10 +350,32 @@ export async function agentCommand(projectArg?: string): Promise<void> {
     let hasOutput = false;
 
     try {
-      await runAgentTurn(client, session, input, (delta) => {
-        process.stdout.write(chalk.white(delta));
-        hasOutput = true;
-      });
+      if (useMiniMax) {
+        // ── Primary: MiniMax M2.7 ──────────────────────────────────────────
+        try {
+          await runAgentTurnOpenAICompat(minimaxKey!, session, input, (delta) => {
+            process.stdout.write(chalk.white(delta));
+            hasOutput = true;
+          });
+        } catch (primaryErr) {
+          // ── Fallback: Claude Sonnet ────────────────────────────────────────
+          if (anthropicClient) {
+            console.log(chalk.gray("\n  (MiniMax unavailable — falling back to Claude Sonnet)\n"));
+            await runAgentTurn(anthropicClient, session, input, (delta) => {
+              process.stdout.write(chalk.white(delta));
+              hasOutput = true;
+            });
+          } else {
+            throw primaryErr;
+          }
+        }
+      } else {
+        // ── Anthropic-only path ────────────────────────────────────────────
+        await runAgentTurn(anthropicClient!, session, input, (delta) => {
+          process.stdout.write(chalk.white(delta));
+          hasOutput = true;
+        });
+      }
 
       if (hasOutput) console.log("\n");
 

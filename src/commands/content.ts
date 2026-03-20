@@ -8,6 +8,8 @@ import {
   fetchDecliningPages,
 } from "../lib/api.js";
 import { config } from "../lib/config.js";
+import { MODEL_CONFIGS, getApiKey } from "../lib/models.js";
+import { generateWithOpenAICompat } from "../lib/providers/openai-compat.js";
 import { getGlobalOpts } from "../lib/globals.js";
 import { formatError } from "../lib/formatter.js";
 
@@ -109,6 +111,69 @@ export function generateOutline(keyword: string): OutlineItem[] {
     { level: "H3", heading: "Key Metrics to Track" },
     { level: "H2", heading: "Conclusion" },
   ];
+}
+
+/**
+ * Generate an AI-enhanced outline using Kimi K2.5 if MOONSHOT_API_KEY is set.
+ * Falls back to the template-based outline when Kimi is unavailable.
+ */
+export async function generateOutlineWithAI(
+  keyword: string,
+  opts?: { searchVolume?: number; currentPosition?: number | null; relatedKeywords?: string[] }
+): Promise<OutlineItem[]> {
+  const writerCfg = MODEL_CONFIGS.writer;
+  const kimiKey = getApiKey(writerCfg);
+
+  if (!kimiKey) {
+    // Graceful degradation — no Kimi key, use template
+    return generateOutline(keyword);
+  }
+
+  try {
+    const context = [
+      opts?.searchVolume ? `Search volume: ${opts.searchVolume.toLocaleString()}/mo` : "",
+      opts?.currentPosition != null ? `Current ranking: #${opts.currentPosition}` : "Currently not ranking",
+      opts?.relatedKeywords?.length ? `Related keywords: ${opts.relatedKeywords.slice(0, 5).join(", ")}` : "",
+    ].filter(Boolean).join("\n");
+
+    const prompt = `You are an expert SEO content strategist. Generate a detailed article outline for the keyword "${keyword}".
+
+${context}
+
+Requirements:
+- Create 5-8 H2 sections with 2-3 H3 subsections each
+- Focus on user intent and topical authority
+- Include sections that address common questions
+- Make headings specific and descriptive (not generic)
+
+Respond with ONLY a JSON array like:
+[{"level":"H2","heading":"..."},{"level":"H3","heading":"..."},...]`;
+
+    const raw = await generateWithOpenAICompat(
+      [{ role: "user", content: prompt }],
+      {
+        apiKey: kimiKey,
+        baseUrl: writerCfg.baseUrl!,
+        model: writerCfg.model,
+        maxTokens: 1024,
+        timeoutMs: 30_000,
+        temperature: 0.6,
+      }
+    );
+
+    // Parse the JSON response
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const parsed = JSON.parse(cleaned) as Array<{ level: string; heading: string }>;
+
+    const outline: OutlineItem[] = parsed
+      .filter((item) => item.level === "H2" || item.level === "H3")
+      .map((item) => ({ level: item.level as "H2" | "H3", heading: item.heading }));
+
+    return outline.length > 0 ? outline : generateOutline(keyword);
+  } catch {
+    // Any error → fall back to template
+    return generateOutline(keyword);
+  }
 }
 
 export function getDeclineSeverity(positionChange: number): "critical" | "moderate" | "minor" {
@@ -250,7 +315,15 @@ export async function contentBriefCommand(
     }
 
     const wordCount = estimateWordCount(brief.currentPosition, brief.searchVolume);
-    const outline = generateOutline(brief.targetKeyword);
+
+    // Use AI-enhanced outline if Kimi is available, fall back to template
+    spinner.text = "Generating outline...";
+    const outline = await generateOutlineWithAI(brief.targetKeyword, {
+      searchVolume: brief.searchVolume,
+      currentPosition: brief.currentPosition,
+      relatedKeywords: brief.relatedKeywords.map((rk) => rk.keyword),
+    });
+    spinner.stop();
 
     if (useJson) {
       process.stdout.write(
@@ -296,8 +369,12 @@ export async function contentBriefCommand(
       });
     }
 
+    const kimiAvailable = !!getApiKey(MODEL_CONFIGS.writer);
     console.log("");
-    console.log(`  ${chalk.gray("Suggested outline:")}`);
+    console.log(
+      `  ${chalk.gray("Suggested outline:")}` +
+      (kimiAvailable ? chalk.gray("  (AI-enhanced via Kimi K2)") : "")
+    );
     outline.forEach((item) => {
       const indent = item.level === "H3" ? "      " : "    ";
       const label =

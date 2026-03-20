@@ -1,9 +1,9 @@
 import chalk from "chalk";
 import ora from "ora";
-import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY, loadCredentials, isTokenExpired } from "../lib/config.js";
 import { fetchProjects } from "../lib/api.js";
 import { getGlobalOpts } from "../lib/globals.js";
+import { getModelAvailability } from "../lib/models.js";
 
 const lemon = chalk.hex("#F5E642");
 const cyan = chalk.hex("#00D4FF");
@@ -86,6 +86,26 @@ async function runChecks(): Promise<CheckResult[]> {
     status: nodeVer >= 18 ? "ok" : "warn",
     message: `${process.version}${nodeVer < 18 ? " (requires ≥18)" : ""}`,
   });
+
+  // 7. AI provider API keys
+  const modelAvailability = getModelAvailability();
+  // De-duplicate by apiKeyEnv to avoid showing the same key multiple times
+  const seenKeys = new Set<string>();
+  for (const m of modelAvailability) {
+    if (seenKeys.has(m.apiKeyEnv)) continue;
+    seenKeys.add(m.apiKeyEnv);
+
+    const isRequired = m.apiKeyEnv === "ANTHROPIC_API_KEY";
+    results.push({
+      name: m.apiKeyEnv,
+      status: m.available ? "ok" : isRequired ? "warn" : "warn",
+      message: m.available
+        ? `Configured (${m.description})`
+        : isRequired
+          ? `Not set — fallback provider (add to ~/.ezeo/.env)`
+          : `Not set — ${m.description} unavailable`,
+    });
+  }
 
   return results;
 }
