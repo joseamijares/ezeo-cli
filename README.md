@@ -1,5 +1,7 @@
 # 🍋 Ezeo CLI
 
+[![npm](https://img.shields.io/npm/v/ezeo)](https://www.npmjs.com/package/ezeo)
+
 **Talk to your SEO data.** The first conversational CLI for SEO and AI visibility.
 
 ```
