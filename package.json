@@ -37,12 +37,14 @@
   ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.49.4",
     "chalk": "^5.4.1",
     "cli-table3": "^0.6.5",
     "commander": "^13.1.0",
     "conf": "^15.1.0",
     "inquirer": "^13.3.2",
+    "openai": "^6.32.0",
     "ora": "^9.3.0"
   },
   "devDependencies": {
