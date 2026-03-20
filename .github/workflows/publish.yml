@@ -1,4 +1,4 @@
-name: Publish to npm
+name: Publish to npm (on git tag)
 
 on:
   push:
@@ -21,6 +21,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npx eslint src/
+
       - name: Run tests
         run: npm test
 
@@ -31,3 +34,10 @@ jobs:
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Summary
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "### 📦 Published ezeo v${VERSION} to npm (via tag)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Install with: \`npm install -g ezeo\`" >> $GITHUB_STEP_SUMMARY
