@@ -22,6 +22,11 @@ vi.mock("../src/lib/api.js", () => ({
   fetchRankingsSummary: vi.fn(),
   fetchInsights: vi.fn(),
   fetchTopKeywords: vi.fn(),
+  fetchCROAudits: vi.fn(),
+  fetchCRODeliverables: vi.fn(),
+  fetchContentOpportunities: vi.fn(),
+  fetchDecliningPages: vi.fn(),
+  fetchKeywordBriefData: vi.fn(),
 }));
 
 import * as api from "../src/lib/api.js";
@@ -218,6 +223,10 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("get_insights");
     expect(prompt).toContain("get_geo");
     expect(prompt).toContain("get_traffic");
+    expect(prompt).toContain("get_cro");
+    expect(prompt).toContain("get_content_opportunities");
+    expect(prompt).toContain("get_declining_pages");
+    expect(prompt).toContain("get_keyword_brief");
   });
 
   it("returns a non-empty string", () => {
@@ -236,14 +245,18 @@ describe("buildSystemPrompt", () => {
 describe("AGENT_TOOLS definitions", () => {
   const toolNames = AGENT_TOOLS.map((t) => t.name);
 
-  it("defines all 6 expected tools", () => {
+  it("defines all 10 expected tools", () => {
     expect(toolNames).toContain("list_projects");
     expect(toolNames).toContain("get_status");
     expect(toolNames).toContain("get_keywords");
     expect(toolNames).toContain("get_insights");
     expect(toolNames).toContain("get_geo");
     expect(toolNames).toContain("get_traffic");
-    expect(AGENT_TOOLS).toHaveLength(6);
+    expect(toolNames).toContain("get_cro");
+    expect(toolNames).toContain("get_content_opportunities");
+    expect(toolNames).toContain("get_declining_pages");
+    expect(toolNames).toContain("get_keyword_brief");
+    expect(AGENT_TOOLS).toHaveLength(10);
   });
 
   it("every tool has a name, description, and input_schema", () => {
@@ -481,6 +494,173 @@ describe("executeTool — get_status", () => {
     expect(parsed.rankings.top3).toBe(5);
     expect(parsed.ga4WoW).toBeNull();
     expect(parsed.geo).toBeNull();
+  });
+});
+
+describe("executeTool — get_cro", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns combined audits and deliverables", async () => {
+    vi.mocked(api.fetchCROAudits).mockResolvedValue([
+      {
+        id: "a1",
+        project_id: "p1",
+        status: "completed",
+        created_at: "2024-01-01",
+        findings: [],
+        quick_wins: [],
+        overall_score: 72,
+        ux_score: 80,
+        performance_score: 65,
+        conversion_score: 70,
+        mobile_score: 75,
+        title: "Homepage Audit",
+        target_url: "https://acme.com",
+      },
+    ]);
+    vi.mocked(api.fetchCRODeliverables).mockResolvedValue([
+      {
+        id: "d1",
+        project_id: "p1",
+        title: "CTA button redesign",
+        status: "pending",
+        type: "design",
+        priority: "high",
+        created_at: "2024-01-02",
+      },
+    ]);
+
+    const result = await executeTool("get_cro", { project_id: "p1" });
+    const parsed = JSON.parse(result);
+    expect(parsed).toHaveProperty("audits");
+    expect(parsed).toHaveProperty("deliverables");
+    expect(parsed.audits[0].overall_score).toBe(72);
+    expect(parsed.deliverables[0].title).toBe("CTA button redesign");
+    expect(api.fetchCROAudits).toHaveBeenCalledWith("p1");
+    expect(api.fetchCRODeliverables).toHaveBeenCalledWith("p1");
+  });
+
+  it("returns empty arrays when both calls fail", async () => {
+    vi.mocked(api.fetchCROAudits).mockRejectedValue(new Error("no data"));
+    vi.mocked(api.fetchCRODeliverables).mockRejectedValue(new Error("no data"));
+
+    const result = await executeTool("get_cro", { project_id: "p1" });
+    const parsed = JSON.parse(result);
+    expect(parsed.audits).toEqual([]);
+    expect(parsed.deliverables).toEqual([]);
+  });
+});
+
+describe("executeTool — get_content_opportunities", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns content opportunities for the project", async () => {
+    vi.mocked(api.fetchContentOpportunities).mockResolvedValue([
+      { keywordId: "k1", keyword: "seo software", searchVolume: 5000, currentPosition: 15 },
+      { keywordId: "k2", keyword: "rank tracker", searchVolume: 3000, currentPosition: 22 },
+    ]);
+
+    const result = await executeTool("get_content_opportunities", { project_id: "p1" });
+    const parsed = JSON.parse(result);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0].keyword).toBe("seo software");
+    expect(parsed[0].searchVolume).toBe(5000);
+    expect(api.fetchContentOpportunities).toHaveBeenCalledWith("p1", 20);
+  });
+
+  it("respects a custom limit", async () => {
+    vi.mocked(api.fetchContentOpportunities).mockResolvedValue([]);
+    await executeTool("get_content_opportunities", { project_id: "p1", limit: 5 });
+    expect(api.fetchContentOpportunities).toHaveBeenCalledWith("p1", 5);
+  });
+
+  it("uses default limit of 20 when none provided", async () => {
+    vi.mocked(api.fetchContentOpportunities).mockResolvedValue([]);
+    await executeTool("get_content_opportunities", { project_id: "p1" });
+    expect(api.fetchContentOpportunities).toHaveBeenCalledWith("p1", 20);
+  });
+});
+
+describe("executeTool — get_declining_pages", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns declining pages for the project", async () => {
+    vi.mocked(api.fetchDecliningPages).mockResolvedValue([
+      {
+        keywordId: "k1",
+        keyword: "best seo tools",
+        url: "https://acme.com/seo-tools",
+        currentPosition: 18,
+        previousPosition: 8,
+        positionChange: 10,
+        latestCheckDate: "2024-01-15",
+      },
+    ]);
+
+    const result = await executeTool("get_declining_pages", { project_id: "p1" });
+    const parsed = JSON.parse(result);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0].keyword).toBe("best seo tools");
+    expect(parsed[0].positionChange).toBe(10);
+    expect(api.fetchDecliningPages).toHaveBeenCalledWith("p1", 3);
+  });
+
+  it("respects a custom min_drop", async () => {
+    vi.mocked(api.fetchDecliningPages).mockResolvedValue([]);
+    await executeTool("get_declining_pages", { project_id: "p1", min_drop: 5 });
+    expect(api.fetchDecliningPages).toHaveBeenCalledWith("p1", 5);
+  });
+
+  it("uses default min_drop of 3 when none provided", async () => {
+    vi.mocked(api.fetchDecliningPages).mockResolvedValue([]);
+    await executeTool("get_declining_pages", { project_id: "p1" });
+    expect(api.fetchDecliningPages).toHaveBeenCalledWith("p1", 3);
+  });
+});
+
+describe("executeTool — get_keyword_brief", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns a keyword brief when found", async () => {
+    vi.mocked(api.fetchKeywordBriefData).mockResolvedValue({
+      targetKeyword: "seo tools",
+      keywordId: "k1",
+      currentPosition: 7,
+      searchVolume: 8100,
+      relatedKeywords: [
+        { keyword: "best seo software", searchVolume: 4400, currentPosition: 12 },
+      ],
+      competitorUrls: ["https://competitor.com/seo-tools"],
+    });
+
+    const result = await executeTool("get_keyword_brief", { project_id: "p1", keyword: "seo tools" });
+    const parsed = JSON.parse(result);
+    expect(parsed.targetKeyword).toBe("seo tools");
+    expect(parsed.currentPosition).toBe(7);
+    expect(parsed.searchVolume).toBe(8100);
+    expect(api.fetchKeywordBriefData).toHaveBeenCalledWith("p1", "seo tools");
+  });
+
+  it("returns a not-found message when keyword does not exist", async () => {
+    vi.mocked(api.fetchKeywordBriefData).mockResolvedValue(null);
+    const result = await executeTool("get_keyword_brief", { project_id: "p1", keyword: "unknown kw" });
+    expect(result).toContain("No data found for keyword");
+    expect(result).toContain("unknown kw");
+  });
+
+  it("returns error string when API throws", async () => {
+    vi.mocked(api.fetchKeywordBriefData).mockRejectedValue(new Error("DB error"));
+    const result = await executeTool("get_keyword_brief", { project_id: "p1", keyword: "seo tools" });
+    expect(result).toContain("Error");
+    expect(result).toContain("get_keyword_brief");
   });
 });
 

@@ -3,6 +3,10 @@
   "version": "0.3.0",
   "description": "Ezeo AI CLI — Talk to your SEO data",
   "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "bin": {
     "ezeo": "./dist/index.js"
   },

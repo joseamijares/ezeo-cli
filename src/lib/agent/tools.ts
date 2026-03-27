@@ -9,6 +9,11 @@ import {
   fetchTopKeywords,
   fetchGSCMetrics,
   fetchGA4Metrics,
+  fetchCROAudits,
+  fetchCRODeliverables,
+  fetchContentOpportunities,
+  fetchDecliningPages,
+  fetchKeywordBriefData,
 } from "../api.js";
 
 export const AGENT_TOOLS: Anthropic.Tool[] = [
@@ -104,6 +109,78 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
       required: ["project_id"],
     },
   },
+  {
+    name: "get_cro",
+    description:
+      "Get CRO (Conversion Rate Optimization) audit scores and findings plus pending CRO deliverables for a project.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "The project ID to get CRO data for",
+        },
+      },
+      required: ["project_id"],
+    },
+  },
+  {
+    name: "get_content_opportunities",
+    description:
+      "Get content gap opportunities: keywords the site ranks for but not in the top 10, sorted by search volume. These are high-priority pages to refresh or improve.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "The project ID to get content opportunities for",
+        },
+        limit: {
+          type: "number",
+          description: "Number of opportunities to fetch (default: 20)",
+        },
+      },
+      required: ["project_id"],
+    },
+  },
+  {
+    name: "get_declining_pages",
+    description:
+      "Get pages with declining rankings over the past 30 days. Returns keywords where current position is worse than the position 30 days ago by at least the minimum drop threshold.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "The project ID to get declining pages for",
+        },
+        min_drop: {
+          type: "number",
+          description: "Minimum position drop to include (default: 3). A drop of 3 means the keyword fell at least 3 positions.",
+        },
+      },
+      required: ["project_id"],
+    },
+  },
+  {
+    name: "get_keyword_brief",
+    description:
+      "Generate a content brief for a specific keyword: current ranking position, search volume, related keywords, and competitor URLs. Use this before writing or refreshing content.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        project_id: {
+          type: "string",
+          description: "The project ID",
+        },
+        keyword: {
+          type: "string",
+          description: "The keyword to generate a brief for",
+        },
+      },
+      required: ["project_id", "keyword"],
+    },
+  },
 ];
 
 export async function executeTool(
@@ -168,6 +245,37 @@ export async function executeTool(
           fetchGA4Metrics(projectId).catch(() => null),
         ]);
         return JSON.stringify({ gsc, ga4 });
+      }
+
+      case "get_cro": {
+        const projectId = input.project_id as string;
+        const [audits, deliverables] = await Promise.all([
+          fetchCROAudits(projectId).catch(() => []),
+          fetchCRODeliverables(projectId).catch(() => []),
+        ]);
+        return JSON.stringify({ audits, deliverables });
+      }
+
+      case "get_content_opportunities": {
+        const projectId = input.project_id as string;
+        const limit = (input.limit as number | undefined) ?? 20;
+        const opportunities = await fetchContentOpportunities(projectId, limit);
+        return JSON.stringify(opportunities);
+      }
+
+      case "get_declining_pages": {
+        const projectId = input.project_id as string;
+        const minDrop = (input.min_drop as number | undefined) ?? 3;
+        const pages = await fetchDecliningPages(projectId, minDrop);
+        return JSON.stringify(pages);
+      }
+
+      case "get_keyword_brief": {
+        const projectId = input.project_id as string;
+        const keyword = input.keyword as string;
+        const brief = await fetchKeywordBriefData(projectId, keyword);
+        if (!brief) return `No data found for keyword: ${keyword}`;
+        return JSON.stringify(brief);
       }
 
       default:
