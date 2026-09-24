@@ -263,6 +263,35 @@ describe("agentTurnWithOpenAICompat", () => {
     expect(result.toolCalls[0].arguments).toEqual({ project_id: "p1" });
   });
 
+  it("ignores custom (non-function) tool calls", async () => {
+    mockOpenAICreate.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: null,
+            tool_calls: [
+              { id: "call_custom", type: "custom", custom: { name: "grammar", input: "x" } },
+              {
+                id: "call_fn",
+                type: "function",
+                function: { name: "get_data", arguments: "" },
+              },
+            ],
+          },
+          finish_reason: "tool_calls",
+        },
+      ],
+    });
+
+    const result = await agentTurnWithOpenAICompat(
+      [{ role: "user", content: "Run get_data" }],
+      tools,
+      { apiKey: "key", baseUrl: "https://api.minimax.chat/v1", model: "MiniMax-M1" }
+    );
+
+    expect(result.toolCalls).toEqual([{ id: "call_fn", name: "get_data", arguments: {} }]);
+  });
+
   it("throws when API returns no choices", async () => {
     mockOpenAICreate.mockResolvedValueOnce({ choices: [] });
 
@@ -316,5 +345,15 @@ describe("toOpenAITool", () => {
 
     const result = toOpenAITool(tool);
     expect(result.function.parameters.required).toHaveLength(0);
+  });
+
+  it("fills defaults when the Anthropic tool omits optional fields", () => {
+    const result = toOpenAITool({ name: "ping", input_schema: { type: "object" as const } });
+
+    expect(result.function).toEqual({
+      name: "ping",
+      description: "",
+      parameters: { type: "object", properties: {}, required: [] },
+    });
   });
 });
