@@ -576,7 +576,10 @@ export async function fetchKeywordBriefData(
 
     // The page WE rank with, from the latest check. This used to be labelled
     // "Competitor URLs": `rankings.url` is our own URL, never another site's.
-    const rankingUrls = target.latest_url ? [target.latest_url] : [];
+    // Only when the check actually measured a position: a 101 row still
+    // carries a URL, and that page is not ranking.
+    const rankingUrls =
+      target.latest_url && isMeasuredPosition(target.latest_position) ? [target.latest_url] : [];
 
     const relatedKeywords = byVolume
       .filter((r) => r.id !== target.id && Number(r.search_volume ?? 0) > 0)

@@ -7,6 +7,15 @@ import { getGlobalOpts } from "../lib/globals.js";
 
 const lemon = chalk.hex("#F5E642");
 
+/** A real calendar date in YYYY-MM-DD that falls on a Monday (UTC). */
+export function isMondayIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  // Rejects 2026-02-30, which Date would otherwise roll into March.
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) return false;
+  return d.getUTCDay() === 1;
+}
+
 function pickProject(projects: Project[], searchName?: string): Project | undefined {
   if (searchName) {
     const needle = searchName.toLowerCase();
@@ -32,7 +41,7 @@ export async function readoutCommand(
   const spinner = ora("Loading weekly readout...").start();
 
   try {
-    if (opts.week && !/^\d{4}-\d{2}-\d{2}$/.test(opts.week)) {
+    if (opts.week && !isMondayIsoDate(opts.week)) {
       spinner.fail(`--week must be a Monday as YYYY-MM-DD, got "${opts.week}"`);
       process.exit(1);
     }
