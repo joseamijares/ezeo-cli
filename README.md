@@ -75,6 +75,7 @@ ezeo chat
 | `ezeo cro [project]` | CRO audit scores and findings |
 | `ezeo alerts [project]` | Recent alerts and insights |
 | `ezeo report [project]` | Full performance report |
+| `ezeo readout [project]` | This week's Ezeo readout, exactly as the app composed it (`--week YYYY-MM-DD` for a past week) |
 | `ezeo chat` | Interactive conversational mode |
 | `ezeo doctor` | Check connectivity, auth, API access |
 | `ezeo memory` | View memory system overview |
@@ -88,10 +89,19 @@ In chat mode, ask natural questions:
 - `"how's AquaProVac?"` - Full status with WoW deltas
 - `"traffic"` - Search Console metrics (7d vs prev 7d)
 - `"rankings"` - Keyword positions + top 5 keywords
-- `"geo"` / `"citations"` - AI visibility across 7 platforms
+- `"geo"` / `"citations"` - AI visibility across ChatGPT, Claude, Gemini, Perplexity and Google AI Overview
 - `"insights"` - Recent alerts and detected issues
 - `"projects"` - Switch between projects
 - `"help"` - Show all commands
+
+## Where the numbers come from
+
+The CLI reads the same series the Ezeo dashboard does, so the two agree:
+
+- **Search Console**: Google's site-wide daily totals, only days Google actually reported, in a window that ends 4 days ago (Search Console lags ~3 days). Position is impression-weighted.
+- **Analytics**: the GA4 site-wide row per day. Per-page rows are never summed; a session touching three pages would count three times.
+- **Rankings**: every tracked keyword's latest and previous check, via the same RPC as the Rankings page. Position 101 means "not in the top 100", not a position.
+- A window with no data prints as unmeasured, never as 0.
 
 ## Memory System
 
@@ -143,7 +153,7 @@ Chat queries are automatically logged to `history.md`, building a record of what
 
 ## What is Ezeo?
 
-[Ezeo AI](https://ezeo.ai) is a SEO + GEO (Generative Engine Optimization) platform. It tracks your visibility across Google, ChatGPT, Perplexity, Gemini, Claude, Grok, and Bing Copilot.
+[Ezeo AI](https://ezeo.ai) is a SEO + GEO (Generative Engine Optimization) platform. It tracks your visibility across Google, ChatGPT, Perplexity, Gemini, Claude and Google AI Overview.
 
 This CLI gives you terminal access to all of it. No dashboards. Just ask.
 

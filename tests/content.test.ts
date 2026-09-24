@@ -435,13 +435,13 @@ describe("content brief data shape", () => {
     currentPosition: number | null;
     searchVolume: number;
     relatedKeywords: Array<{ keyword: string; searchVolume: number; currentPosition: number | null }>;
-    competitorUrls: string[];
+    rankingUrls: string[];
   }) {
     return {
       wordCount: estimateWordCount(briefData.currentPosition, briefData.searchVolume),
       outline: generateOutline(briefData.targetKeyword),
       secondaryKeywords: briefData.relatedKeywords.slice(0, 8),
-      competitors: briefData.competitorUrls,
+      competitors: briefData.rankingUrls,
     };
   }
 
@@ -454,7 +454,7 @@ describe("content brief data shape", () => {
         { keyword: "seo audit", searchVolume: 900, currentPosition: 31 },
         { keyword: "technical seo checklist", searchVolume: 720, currentPosition: 45 },
       ],
-      competitorUrls: ["https://moz.com/seo", "https://ahrefs.com/seo"],
+      rankingUrls: ["https://moz.com/seo", "https://ahrefs.com/seo"],
     });
 
     expect(brief.wordCount).toBeGreaterThan(0);
@@ -476,7 +476,7 @@ describe("content brief data shape", () => {
       currentPosition: null,
       searchVolume: 5000,
       relatedKeywords,
-      competitorUrls: [],
+      rankingUrls: [],
     });
     expect(brief.secondaryKeywords).toHaveLength(8);
   });
@@ -487,7 +487,7 @@ describe("content brief data shape", () => {
       currentPosition: null,
       searchVolume: 200,
       relatedKeywords: [],
-      competitorUrls: [],
+      rankingUrls: [],
     });
     expect(brief.competitors).toHaveLength(0);
     expect(brief.wordCount).toBeGreaterThan(0);

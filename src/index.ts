@@ -15,6 +15,7 @@ import { setupCommand } from "./commands/setup.js";
 import { apiKeyCreateCommand, apiKeyListCommand, apiKeyRevokeCommand } from "./commands/api-key.js";
 import { reportCommand } from "./commands/report.js";
 import { alertsCommand } from "./commands/alerts.js";
+import { readoutCommand } from "./commands/readout.js";
 import { geoCommand } from "./commands/geo.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { keywordsCommand } from "./commands/keywords.js";
@@ -187,6 +188,25 @@ Examples:
   )
   .action((project: string | undefined, opts: { json?: boolean; md?: boolean }) =>
     reportCommand(project, opts)
+  );
+
+// ---- readout ----
+program
+  .command("readout [project]")
+  .description("This week's Ezeo readout — regressions, quick wins, GEO and CRO, as the app shows it")
+  .option("--week <monday>", "A past week, by its Monday (YYYY-MM-DD)")
+  .option("--json", "Output as JSON")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo readout                        # Latest readout, default project
+  ezeo readout wendella               # Latest readout for Wendella
+  ezeo readout aqua --week 2026-09-14 # A past week
+  ezeo readout > readout.md           # Save the Markdown`
+  )
+  .action((project: string | undefined, opts: { week?: string; json?: boolean }) =>
+    readoutCommand(project, opts)
   );
 
 // ---- alerts ----

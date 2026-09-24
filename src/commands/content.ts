@@ -382,10 +382,10 @@ export async function contentBriefCommand(
       console.log(`  ${indent}${chalk.gray(item.level)}  ${label}`);
     });
 
-    if (brief.competitorUrls.length > 0) {
+    if (brief.rankingUrls.length > 0) {
       console.log("");
-      console.log(`  ${chalk.gray("Competitor URLs to analyze:")}`);
-      brief.competitorUrls.forEach((url) => {
+      console.log(`  ${chalk.gray("Our page ranking for it:")}`);
+      brief.rankingUrls.forEach((url) => {
         console.log(`    ${chalk.gray("·")} ${chalk.blue(url)}`);
       });
     }
@@ -445,7 +445,7 @@ export async function contentAuditCommand(
     console.log(
       `  ${lemon.bold("Content Audit")} ${chalk.gray("—")} ${cyan(project.name)}`
     );
-    console.log(chalk.gray("  Comparing current rankings vs. 30 days ago\n"));
+    console.log(chalk.gray("  Comparing each keyword's latest ranking check with the one before it\n"));
 
     if (decliningPages.length === 0) {
       console.log(chalk.gray("  No pages with declining rankings found. Great job!\n"));

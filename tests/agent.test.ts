@@ -638,7 +638,7 @@ describe("executeTool — get_keyword_brief", () => {
       relatedKeywords: [
         { keyword: "best seo software", searchVolume: 4400, currentPosition: 12 },
       ],
-      competitorUrls: ["https://competitor.com/seo-tools"],
+      rankingUrls: ["https://competitor.com/seo-tools"],
     });
 
     const result = await executeTool("get_keyword_brief", { project_id: "p1", keyword: "seo tools" });

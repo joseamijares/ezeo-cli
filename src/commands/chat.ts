@@ -169,7 +169,7 @@ async function handleIntent(intent: Intent): Promise<string | null> {
         fetchGSCMetricsWoW(project.id).catch(() => nullGSCWoW()),
         fetchGA4MetricsWoW(project.id).catch(() => nullGA4WoW()),
         fetchGEOMetrics(project.id).catch(() => ({ totalCitations: 0, platforms: {}, citationRate: 0, hasData: false })),
-        fetchRankingsSummary(project.id).catch(() => ({ top3: 0, top10: 0, top20: 0, total: 0 })),
+        fetchRankingsSummary(project.id).catch(() => ({ top3: 0, top10: 0, top20: 0, ranking: 0, total: 0 })),
         fetchInsights(project.id, 3).catch(() => []),
         fetchTopKeywords(project.id, 5).catch(() => []),
       ]);
@@ -352,7 +352,7 @@ async function handleIntent(intent: Intent): Promise<string | null> {
         fetchGSCMetricsWoW(project.id).catch(() => nullGSCWoW()),
         fetchGA4MetricsWoW(project.id).catch(() => nullGA4WoW()),
         fetchGEOMetrics(project.id).catch(() => ({ totalCitations: 0, platforms: {}, citationRate: 0, hasData: false })),
-        fetchRankingsSummary(project.id).catch(() => ({ top3: 0, top10: 0, top20: 0, total: 0 })),
+        fetchRankingsSummary(project.id).catch(() => ({ top3: 0, top10: 0, top20: 0, ranking: 0, total: 0 })),
         fetchTopKeywords(project.id, 10).catch(() => []),
       ]);
       spinner.stop();
@@ -500,16 +500,16 @@ function completer(line: string): [string[], string] {
 
 function nullGSCWoW(): GSCMetricsWoW {
   return {
-    current: { clicks: 0, impressions: 0, ctr: 0, position: 0, hasData: false },
-    previous: { clicks: 0, impressions: 0, ctr: 0, position: 0, hasData: false },
+    current: { clicks: 0, impressions: 0, ctr: 0, position: 0, daysMeasured: 0, hasData: false },
+    previous: { clicks: 0, impressions: 0, ctr: 0, position: 0, daysMeasured: 0, hasData: false },
     delta: { clicks: { value: 0, pct: null }, impressions: { value: 0, pct: null }, ctr: { value: 0, pct: null }, position: { value: 0, pct: null } },
   };
 }
 
 function nullGA4WoW(): GA4MetricsWoW {
   return {
-    current: { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, hasData: false },
-    previous: { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, hasData: false },
+    current: { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, daysMeasured: 0, hasData: false },
+    previous: { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, daysMeasured: 0, hasData: false },
     delta: { sessions: { value: 0, pct: null }, pageviews: { value: 0, pct: null }, bounceRate: { value: 0, pct: null } },
   };
 }

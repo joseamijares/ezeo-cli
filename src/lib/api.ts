@@ -7,6 +7,18 @@ import {
   isTokenExpired,
   type Credentials,
 } from "./config.js";
+import {
+  GSC_LAG_DAYS,
+  aggregateGA4Days,
+  aggregateGSCDays,
+  isMeasuredPosition,
+  summarizeRankings,
+  windowEndingDaysAgo,
+  type GA4DayRow,
+  type GSCDayRow,
+  type KeywordRankingRow,
+  type RankingsSummaryAggregate,
+} from "./metrics.js";
 
 let client: SupabaseClient | null = null;
 
@@ -104,52 +116,45 @@ export interface GSCMetrics {
   impressions: number;
   ctr: number;
   position: number;
+  /** Days Google actually reported in the window (placeholders excluded). */
+  daysMeasured: number;
   hasData: boolean;
+}
+
+/**
+ * Search Console totals for `days` reported days ending `endOffset` days ago.
+ * Reads Google's own site-wide daily series, the same source the dashboard's
+ * `get_project_search_metrics` uses; see src/lib/metrics.ts for why.
+ */
+async function fetchGSCWindow(
+  projectId: string,
+  days: number,
+  endOffset: number
+): Promise<GSCMetrics> {
+  try {
+    const sb = await getClient();
+    const { start, end } = windowEndingDaysAgo(days, endOffset);
+    const { data, error } = await sb
+      .from("search_console_sitewide_daily")
+      .select("clicks, impressions, average_position")
+      .eq("project_id", projectId)
+      .eq("reported_by_source", true)
+      .gte("date", start)
+      .lte("date", end);
+
+    if (error) throw new Error(`GSC query failed: ${error.message}`);
+    return aggregateGSCDays((data ?? []) as GSCDayRow[]);
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error(`Network error fetching GSC metrics: ${String(err)}`);
+  }
 }
 
 export async function fetchGSCMetrics(
   projectId: string,
   days: number = 7
 ): Promise<GSCMetrics> {
-  try {
-    const sb = await getClient();
-    const since = new Date();
-    since.setDate(since.getDate() - days);
-
-    const { data, error } = await sb
-      .from("search_console_data")
-      .select("clicks, impressions, ctr, average_position")
-      .eq("project_id", projectId)
-      .gte("date", since.toISOString().split("T")[0]);
-
-    if (error) throw new Error(`GSC query failed: ${error.message}`);
-    if (!data || data.length === 0) {
-      return { clicks: 0, impressions: 0, ctr: 0, position: 0, hasData: false };
-    }
-
-    const totals = data.reduce(
-      (acc, row) => ({
-        clicks: acc.clicks + (row.clicks ?? 0),
-        impressions: acc.impressions + (row.impressions ?? 0),
-        position: acc.position + (row.average_position ?? 0),
-      }),
-      { clicks: 0, impressions: 0, position: 0 }
-    );
-
-    const count = data.length;
-    // CTR = total clicks / total impressions (not average of per-row CTRs)
-    const ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
-    return {
-      clicks: totals.clicks,
-      impressions: totals.impressions,
-      ctr,
-      position: count > 0 ? totals.position / count : 0,
-      hasData: true,
-    };
-  } catch (err) {
-    if (err instanceof Error) throw err;
-    throw new Error(`Network error fetching GSC metrics: ${String(err)}`);
-  }
+  return fetchGSCWindow(projectId, days, GSC_LAG_DAYS);
 }
 
 // ---- Week-over-Week types ----
@@ -180,78 +185,40 @@ export interface GA4MetricsWoW {
   };
 }
 
-function calcDelta(current: number, previous: number): MetricDelta {
+export function calcDelta(current: number, previous: number): MetricDelta {
   const value = current - previous;
   const pct = previous !== 0 ? (value / previous) * 100 : null;
   return { value, pct };
 }
 
-/** Fetch current 7d vs previous 7d GSC metrics with delta % */
+/** A delta is only meaningful when both windows were measured. */
+function measuredDelta(
+  current: { hasData: boolean },
+  previous: { hasData: boolean },
+  a: number,
+  b: number
+): MetricDelta {
+  if (!current.hasData || !previous.hasData) return { value: 0, pct: null };
+  return calcDelta(a, b);
+}
+
+/** Last 7 reported days vs the 7 before them, both ending before GSC's lag. */
 export async function fetchGSCMetricsWoW(projectId: string): Promise<GSCMetricsWoW> {
   const [current, previous] = await Promise.all([
-    fetchGSCMetrics(projectId, 7),
-    fetchGSCMetricsPeriod(projectId, 14, 7),
+    fetchGSCWindow(projectId, 7, GSC_LAG_DAYS),
+    fetchGSCWindow(projectId, 7, GSC_LAG_DAYS + 7),
   ]);
 
   return {
     current,
     previous,
     delta: {
-      clicks: calcDelta(current.clicks, previous.clicks),
-      impressions: calcDelta(current.impressions, previous.impressions),
-      ctr: calcDelta(current.ctr, previous.ctr),
-      position: calcDelta(current.position, previous.position),
+      clicks: measuredDelta(current, previous, current.clicks, previous.clicks),
+      impressions: measuredDelta(current, previous, current.impressions, previous.impressions),
+      ctr: measuredDelta(current, previous, current.ctr, previous.ctr),
+      position: measuredDelta(current, previous, current.position, previous.position),
     },
   };
-}
-
-/** Fetch GSC data for a specific window (daysAgo to daysAgo - windowSize) */
-async function fetchGSCMetricsPeriod(
-  projectId: string,
-  daysAgo: number,
-  windowSize: number
-): Promise<GSCMetrics> {
-  try {
-    const sb = await getClient();
-    const start = new Date();
-    start.setDate(start.getDate() - daysAgo);
-    const end = new Date();
-    end.setDate(end.getDate() - (daysAgo - windowSize));
-
-    const { data, error } = await sb
-      .from("search_console_data")
-      .select("clicks, impressions, ctr, average_position")
-      .eq("project_id", projectId)
-      .gte("date", start.toISOString().split("T")[0])
-      .lt("date", end.toISOString().split("T")[0]);
-
-    if (error) throw new Error(`GSC period query failed: ${error.message}`);
-    if (!data || data.length === 0) {
-      return { clicks: 0, impressions: 0, ctr: 0, position: 0, hasData: false };
-    }
-
-    const totals = data.reduce(
-      (acc, row) => ({
-        clicks: acc.clicks + (row.clicks ?? 0),
-        impressions: acc.impressions + (row.impressions ?? 0),
-        position: acc.position + (row.average_position ?? 0),
-      }),
-      { clicks: 0, impressions: 0, position: 0 }
-    );
-
-    const count = data.length;
-    const ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
-    return {
-      clicks: totals.clicks,
-      impressions: totals.impressions,
-      ctr,
-      position: count > 0 ? totals.position / count : 0,
-      hasData: true,
-    };
-  } catch (err) {
-    if (err instanceof Error) throw err;
-    throw new Error(`Network error: ${String(err)}`);
-  }
 }
 
 export interface GA4Metrics {
@@ -260,129 +227,87 @@ export interface GA4Metrics {
   pagesPerSession: number;
   bounceRate: number;
   avgDuration: number;
+  daysMeasured: number;
   hasData: boolean;
 }
 
-export async function fetchGA4Metrics(
+/** GA4 site-wide totals for `days` days ending `endOffset` days ago. */
+async function fetchGA4Window(
   projectId: string,
-  days: number = 7
+  days: number,
+  endOffset: number
 ): Promise<GA4Metrics> {
   try {
     const sb = await getClient();
-    const since = new Date();
-    since.setDate(since.getDate() - days);
-
+    const { start, end } = windowEndingDaysAgo(days, endOffset);
     const { data, error } = await sb
       .from("analytics_data")
-      .select("metrics")
+      .select("sessions, metrics")
       .eq("project_id", projectId)
-      .gte("date", since.toISOString().split("T")[0]);
+      .eq("page_path", "__sitewide__")
+      .gte("date", start)
+      .lte("date", end);
 
     if (error) throw new Error(`GA4 query failed: ${error.message}`);
-    if (!data || data.length === 0) {
-      return { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, hasData: false };
-    }
-
-    const totals = data.reduce(
-      (acc, row) => {
-        const m = (row.metrics ?? {}) as Record<string, number>;
-        return {
-          sessions: acc.sessions + (m.sessions ?? 0),
-          pageviews: acc.pageviews + (m.screenPageViews ?? 0),
-          bounceCount: acc.bounceCount + (m.bounceRate ?? 0), // bounceRate is 0 or 1 per row
-          avgDuration: acc.avgDuration + (m.averageSessionDuration ?? 0),
-          count: acc.count + 1,
-        };
-      },
-      { sessions: 0, pageviews: 0, bounceCount: 0, avgDuration: 0, count: 0 }
-    );
-
-    return {
-      sessions: totals.sessions,
-      pageviews: totals.pageviews,
-      pagesPerSession: totals.sessions > 0 ? totals.pageviews / totals.sessions : 0,
-      bounceRate: totals.count > 0 ? (totals.bounceCount / totals.count) * 100 : 0, // convert to percentage
-      avgDuration: totals.count > 0 ? totals.avgDuration / totals.count : 0,
-      hasData: true,
-    };
+    return aggregateGA4Days((data ?? []) as GA4DayRow[]);
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error(`Network error fetching GA4 metrics: ${String(err)}`);
   }
 }
 
-/** Fetch GA4 data for a specific window */
-async function fetchGA4MetricsPeriod(
+/** Last `days` complete days (yesterday backwards). Today is still partial. */
+export async function fetchGA4Metrics(
   projectId: string,
-  daysAgo: number,
-  windowSize: number
+  days: number = 7
 ): Promise<GA4Metrics> {
-  try {
-    const sb = await getClient();
-    const start = new Date();
-    start.setDate(start.getDate() - daysAgo);
-    const end = new Date();
-    end.setDate(end.getDate() - (daysAgo - windowSize));
-
-    const { data, error } = await sb
-      .from("analytics_data")
-      .select("metrics")
-      .eq("project_id", projectId)
-      .gte("date", start.toISOString().split("T")[0])
-      .lt("date", end.toISOString().split("T")[0]);
-
-    if (error) throw new Error(`GA4 period query failed: ${error.message}`);
-    if (!data || data.length === 0) {
-      return { sessions: 0, pageviews: 0, pagesPerSession: 0, bounceRate: 0, avgDuration: 0, hasData: false };
-    }
-
-    const totals = data.reduce(
-      (acc, row) => {
-        const m = (row.metrics ?? {}) as Record<string, number>;
-        return {
-          sessions: acc.sessions + (m.sessions ?? 0),
-          pageviews: acc.pageviews + (m.screenPageViews ?? 0),
-          bounceCount: acc.bounceCount + (m.bounceRate ?? 0),
-          avgDuration: acc.avgDuration + (m.averageSessionDuration ?? 0),
-          count: acc.count + 1,
-        };
-      },
-      { sessions: 0, pageviews: 0, bounceCount: 0, avgDuration: 0, count: 0 }
-    );
-
-    return {
-      sessions: totals.sessions,
-      pageviews: totals.pageviews,
-      pagesPerSession: totals.sessions > 0 ? totals.pageviews / totals.sessions : 0,
-      bounceRate: totals.count > 0 ? (totals.bounceCount / totals.count) * 100 : 0,
-      avgDuration: totals.count > 0 ? totals.avgDuration / totals.count : 0,
-      hasData: true,
-    };
-  } catch (err) {
-    if (err instanceof Error) throw err;
-    throw new Error(`Network error: ${String(err)}`);
-  }
+  return fetchGA4Window(projectId, days, 1);
 }
 
-/** Fetch current 7d vs previous 7d GA4 metrics with delta % */
+/** Last 7 complete days vs the 7 before them. */
 export async function fetchGA4MetricsWoW(projectId: string): Promise<GA4MetricsWoW> {
   const [current, previous] = await Promise.all([
-    fetchGA4Metrics(projectId, 7),
-    fetchGA4MetricsPeriod(projectId, 14, 7),
+    fetchGA4Window(projectId, 7, 1),
+    fetchGA4Window(projectId, 7, 8),
   ]);
 
   return {
     current,
     previous,
     delta: {
-      sessions: calcDelta(current.sessions, previous.sessions),
-      pageviews: calcDelta(current.pageviews, previous.pageviews),
-      bounceRate: calcDelta(current.bounceRate, previous.bounceRate),
+      sessions: measuredDelta(current, previous, current.sessions, previous.sessions),
+      pageviews: measuredDelta(current, previous, current.pageviews, previous.pageviews),
+      bounceRate: measuredDelta(current, previous, current.bounceRate, previous.bounceRate),
     },
   };
 }
 
-// ---- Top Keywords ----
+// ---- Keyword rankings ----
+
+/**
+ * Every tracked keyword with its latest and previous ranking row, via the
+ * `get_project_keyword_rankings` RPC the Rankings page uses (EZE-1653).
+ * The old two-query approach sent every keyword id in a URL and read an
+ * unbounded `rankings` query, which PostgREST silently caps at 1,000 rows —
+ * EquipMaxx alone has 1,938 keywords and 15,821 ranking rows.
+ */
+export async function fetchKeywordRankings(projectId: string): Promise<KeywordRankingRow[]> {
+  const sb = await getClient();
+  const PAGE = 1000;
+  const rows: KeywordRankingRow[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await sb.rpc("get_project_keyword_rankings", {
+      p_project_id: projectId,
+      p_limit: PAGE,
+      p_offset: offset,
+    });
+    if (error) throw new Error(`Rankings query failed: ${error.message}`);
+    const page = (data ?? []) as KeywordRankingRow[];
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return rows;
+}
 
 export interface TopKeyword {
   keyword: string;
@@ -391,89 +316,29 @@ export interface TopKeyword {
   change: number | null; // negative = improved (moved up)
 }
 
+export function toTopKeywords(rows: KeywordRankingRow[], limit: number): TopKeyword[] {
+  return rows
+    .filter((r) => isMeasuredPosition(r.latest_position))
+    .map((r) => {
+      const position = r.latest_position as number;
+      const prev = isMeasuredPosition(r.previous_position) ? r.previous_position : null;
+      return {
+        keyword: r.keyword,
+        position,
+        previousPosition: prev,
+        change: prev != null ? position - prev : null,
+      };
+    })
+    .sort((a, b) => a.position - b.position)
+    .slice(0, limit);
+}
+
 export async function fetchTopKeywords(
   projectId: string,
   limit: number = 5
 ): Promise<TopKeyword[]> {
   try {
-    const sb = await getClient();
-
-    // Get latest ranking per keyword via rankings table (joined through keywords)
-    // Use RPC or raw query approach: get keywords with their latest ranking
-    const { data, error } = await sb.rpc("get_top_keywords", {
-      p_project_id: projectId,
-      p_limit: limit,
-    });
-
-    if (!error && data && data.length > 0) {
-      return data
-        .filter((row: Record<string, unknown>) => Number(row.position) <= 100)
-        .map((row: Record<string, unknown>) => {
-          const pos = Number(row.position);
-          const prevPos =
-            row.previous_position != null && Number(row.previous_position) > 0
-              ? Number(row.previous_position)
-              : null;
-          return {
-            keyword: row.keyword as string,
-            position: pos,
-            previousPosition: prevPos,
-            change: prevPos != null ? pos - prevPos : null,
-          };
-        });
-    }
-
-    // Fallback: manual join via two queries
-    const { data: keywords, error: kwErr } = await sb
-      .from("keywords")
-      .select("id, keyword")
-      .eq("project_id", projectId)
-      .limit(100);
-
-    if (kwErr || !keywords || keywords.length === 0) return [];
-
-    const keywordIds = keywords.map((k) => k.id as string);
-    const { data: rankings, error: rkErr } = await sb
-      .from("rankings")
-      .select("keyword_id, position, check_date")
-      .in("keyword_id", keywordIds)
-      .not("position", "is", null)
-      .order("check_date", { ascending: false });
-
-    if (rkErr || !rankings || rankings.length === 0) return [];
-
-    // Get latest + previous position per keyword (rankings sorted by check_date desc)
-    const latestByKeyword = new Map<string, { position: number; check_date: string }>();
-    const previousByKeyword = new Map<string, number>();
-    for (const r of rankings) {
-      const kid = r.keyword_id as string;
-      if (!latestByKeyword.has(kid)) {
-        latestByKeyword.set(kid, { position: r.position as number, check_date: r.check_date as string });
-      } else if (!previousByKeyword.has(kid)) {
-        // Second entry for this keyword = previous position
-        previousByKeyword.set(kid, r.position as number);
-      }
-    }
-
-    // Build keyword map
-    const kwMap = new Map(keywords.map((k) => [k.id as string, k.keyword as string]));
-
-    // Sort by position, filter out 101+ (not meaningfully ranking), take top N
-    const results = Array.from(latestByKeyword.entries())
-      .map(([kid, { position }]) => {
-        const prev = previousByKeyword.get(kid) ?? null;
-        return {
-          keyword: kwMap.get(kid) ?? "unknown",
-          position,
-          previousPosition: prev,
-          change: prev != null ? position - prev : null,
-        };
-      })
-      .filter((r) => r.position <= 100)
-      .sort((a, b) => a.position - b.position)
-      .slice(0, limit);
-
-    return results;
+    return toTopKeywords(await fetchKeywordRankings(projectId), limit);
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error(`Network error fetching top keywords: ${String(err)}`);
@@ -529,55 +394,13 @@ export async function fetchGEOMetrics(
   }
 }
 
-export interface RankingsSummary {
-  top3: number;
-  top10: number;
-  top20: number;
-  total: number;
-}
+export type RankingsSummary = RankingsSummaryAggregate;
 
 export async function fetchRankingsSummary(
   projectId: string
 ): Promise<RankingsSummary> {
   try {
-    const sb = await getClient();
-
-    // Get all keywords for project, then their latest rankings
-    const { data: keywords, error: kwErr } = await sb
-      .from("keywords")
-      .select("id")
-      .eq("project_id", projectId)
-      .limit(500);
-
-    if (kwErr || !keywords || keywords.length === 0) return { top3: 0, top10: 0, top20: 0, total: 0 };
-
-    const keywordIds = keywords.map((k) => k.id as string);
-    const { data: rankings, error: rkErr } = await sb
-      .from("rankings")
-      .select("keyword_id, position, check_date")
-      .in("keyword_id", keywordIds)
-      .not("position", "is", null)
-      .order("check_date", { ascending: false });
-
-    if (rkErr || !rankings) return { top3: 0, top10: 0, top20: 0, total: 0 };
-
-    // Get latest position per keyword
-    const latestByKeyword = new Map<string, number>();
-    for (const r of rankings) {
-      const kid = r.keyword_id as string;
-      if (!latestByKeyword.has(kid)) {
-        latestByKeyword.set(kid, r.position as number);
-      }
-    }
-
-    let top3 = 0, top10 = 0, top20 = 0;
-    for (const pos of latestByKeyword.values()) {
-      if (pos <= 3) top3++;
-      if (pos <= 10) top10++;
-      if (pos <= 20) top20++;
-    }
-
-    return { top3, top10, top20, total: latestByKeyword.size };
+    return summarizeRankings(await fetchKeywordRankings(projectId));
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error(`Network error fetching rankings: ${String(err)}`);
@@ -693,82 +516,34 @@ export interface ContentOpportunity {
   currentPosition: number;
 }
 
+/** Tracked keywords ranking 11..100 with >100 monthly searches, by volume. */
+export function toContentOpportunities(
+  rows: KeywordRankingRow[],
+  limit: number
+): ContentOpportunity[] {
+  return rows
+    .filter(
+      (r) =>
+        isMeasuredPosition(r.latest_position) &&
+        r.latest_position > 10 &&
+        Number(r.search_volume ?? 0) > 100
+    )
+    .map((r) => ({
+      keywordId: r.id,
+      keyword: r.keyword,
+      searchVolume: Number(r.search_volume ?? 0),
+      currentPosition: r.latest_position as number,
+    }))
+    .sort((a, b) => b.searchVolume - a.searchVolume)
+    .slice(0, limit);
+}
+
 export async function fetchContentOpportunities(
   projectId: string,
   limit: number = 50
 ): Promise<ContentOpportunity[]> {
   try {
-    const sb = await getClient();
-
-    // Try RPC first
-    const { data: rpcData, error: rpcError } = await sb.rpc("get_content_opportunities", {
-      p_project_id: projectId,
-      p_limit: limit,
-    });
-
-    if (!rpcError && rpcData && (rpcData as unknown[]).length > 0) {
-      return (rpcData as Record<string, unknown>[])
-        .filter((row) => Number(row.position) > 10 && Number(row.search_volume) > 100)
-        .map((row) => ({
-          keywordId: row.keyword_id as string,
-          keyword: row.keyword as string,
-          searchVolume: Number(row.search_volume),
-          currentPosition: Number(row.position),
-        }))
-        .sort((a, b) => b.searchVolume - a.searchVolume)
-        .slice(0, limit);
-    }
-
-    // Fallback: keywords + rankings join
-    const { data: keywords, error: kwErr } = await sb
-      .from("keywords")
-      .select("id, keyword, search_volume")
-      .eq("project_id", projectId)
-      .limit(500);
-
-    if (kwErr || !keywords || keywords.length === 0) return [];
-
-    const keywordIds = keywords.map((k) => k.id as string);
-    const { data: rankings, error: rkErr } = await sb
-      .from("rankings")
-      .select("keyword_id, position, check_date")
-      .in("keyword_id", keywordIds)
-      .not("position", "is", null)
-      .order("check_date", { ascending: false });
-
-    if (rkErr || !rankings || rankings.length === 0) return [];
-
-    const latestByKeyword = new Map<string, number>();
-    for (const r of rankings) {
-      const kid = r.keyword_id as string;
-      if (!latestByKeyword.has(kid)) {
-        latestByKeyword.set(kid, r.position as number);
-      }
-    }
-
-    const kwMap = new Map(
-      keywords.map((k) => [
-        k.id as string,
-        { keyword: k.keyword as string, searchVolume: Number(k.search_volume ?? 0) },
-      ])
-    );
-
-    return Array.from(latestByKeyword.entries())
-      .filter(([kid, pos]) => {
-        const kw = kwMap.get(kid);
-        return pos > 10 && pos <= 100 && kw && kw.searchVolume > 100;
-      })
-      .map(([kid, pos]) => {
-        const kw = kwMap.get(kid)!;
-        return {
-          keywordId: kid,
-          keyword: kw.keyword,
-          searchVolume: kw.searchVolume,
-          currentPosition: pos,
-        };
-      })
-      .sort((a, b) => b.searchVolume - a.searchVolume)
-      .slice(0, limit);
+    return toContentOpportunities(await fetchKeywordRankings(projectId), limit);
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error(`Network error fetching content opportunities: ${String(err)}`);
@@ -781,7 +556,7 @@ export interface KeywordBriefData {
   currentPosition: number | null;
   searchVolume: number;
   relatedKeywords: Array<{ keyword: string; searchVolume: number; currentPosition: number | null }>;
-  competitorUrls: string[];
+  rankingUrls: string[];
 }
 
 export async function fetchKeywordBriefData(
@@ -789,79 +564,36 @@ export async function fetchKeywordBriefData(
   keyword: string
 ): Promise<KeywordBriefData | null> {
   try {
-    const sb = await getClient();
+    const rows = await fetchKeywordRankings(projectId);
+    const needle = keyword.trim().toLowerCase();
+    const byVolume = [...rows].sort(
+      (a, b) => Number(b.search_volume ?? 0) - Number(a.search_volume ?? 0)
+    );
+    const target =
+      byVolume.find((r) => r.keyword.toLowerCase() === needle) ??
+      byVolume.find((r) => r.keyword.toLowerCase().includes(needle));
+    if (!target) return null;
 
-    // Find the target keyword (fuzzy match)
-    const { data: kwData, error: kwErr } = await sb
-      .from("keywords")
-      .select("id, keyword, search_volume")
-      .eq("project_id", projectId)
-      .ilike("keyword", `%${keyword}%`)
-      .order("search_volume", { ascending: false })
-      .limit(1);
+    // The page WE rank with, from the latest check. This used to be labelled
+    // "Competitor URLs": `rankings.url` is our own URL, never another site's.
+    const rankingUrls = target.latest_url ? [target.latest_url] : [];
 
-    if (kwErr || !kwData || kwData.length === 0) return null;
-
-    const targetKw = kwData[0];
-    const kwId = targetKw.id as string;
-
-    // Get latest ranking and competitor URLs
-    const { data: rankings, error: rkErr } = await sb
-      .from("rankings")
-      .select("position, check_date, url")
-      .eq("keyword_id", kwId)
-      .order("check_date", { ascending: false })
-      .limit(10);
-
-    const currentPosition =
-      !rkErr && rankings && rankings.length > 0 ? (rankings[0].position as number) : null;
-
-    const competitorUrls = rankings
-      ? [...new Set(rankings.map((r) => r.url as string).filter(Boolean))].slice(0, 5)
-      : [];
-
-    // Get related keywords (same project, sorted by volume)
-    const { data: relatedData, error: relErr } = await sb
-      .from("keywords")
-      .select("id, keyword, search_volume")
-      .eq("project_id", projectId)
-      .neq("id", kwId)
-      .gt("search_volume", 0)
-      .order("search_volume", { ascending: false })
-      .limit(20);
-
-    let relatedKeywords: KeywordBriefData["relatedKeywords"] = [];
-
-    if (!relErr && relatedData && relatedData.length > 0) {
-      const relatedIds = relatedData.map((k) => k.id as string);
-      const { data: relRankings } = await sb
-        .from("rankings")
-        .select("keyword_id, position, check_date")
-        .in("keyword_id", relatedIds)
-        .order("check_date", { ascending: false });
-
-      const latestRelRankings = new Map<string, number | null>();
-      for (const r of relRankings ?? []) {
-        const kid = r.keyword_id as string;
-        if (!latestRelRankings.has(kid)) {
-          latestRelRankings.set(kid, r.position as number);
-        }
-      }
-
-      relatedKeywords = relatedData.slice(0, 10).map((k) => ({
-        keyword: k.keyword as string,
-        searchVolume: Number(k.search_volume ?? 0),
-        currentPosition: latestRelRankings.get(k.id as string) ?? null,
+    const relatedKeywords = byVolume
+      .filter((r) => r.id !== target.id && Number(r.search_volume ?? 0) > 0)
+      .slice(0, 10)
+      .map((r) => ({
+        keyword: r.keyword,
+        searchVolume: Number(r.search_volume ?? 0),
+        currentPosition: isMeasuredPosition(r.latest_position) ? r.latest_position : null,
       }));
-    }
 
     return {
-      targetKeyword: targetKw.keyword as string,
-      keywordId: kwId,
-      currentPosition,
-      searchVolume: Number(targetKw.search_volume ?? 0),
+      targetKeyword: target.keyword,
+      keywordId: target.id,
+      currentPosition: isMeasuredPosition(target.latest_position) ? target.latest_position : null,
+      searchVolume: Number(target.search_volume ?? 0),
       relatedKeywords,
-      competitorUrls,
+      rankingUrls,
     };
   } catch (err) {
     if (err instanceof Error) throw err;
@@ -879,86 +611,81 @@ export interface PageAuditEntry {
   latestCheckDate: string;
 }
 
+/**
+ * Keywords whose latest measured position is at least `minDrop` worse than
+ * the previous check. A keyword that fell out of the top 100 is not listed
+ * here: 101 is a sentinel, not a position, so its "drop" has no size.
+ */
+export function toDecliningPages(rows: KeywordRankingRow[], minDrop: number): PageAuditEntry[] {
+  return rows
+    .filter(
+      (r) =>
+        isMeasuredPosition(r.latest_position) &&
+        isMeasuredPosition(r.previous_position) &&
+        r.latest_position - r.previous_position >= minDrop
+    )
+    .map((r) => ({
+      keywordId: r.id,
+      keyword: r.keyword,
+      url: r.latest_url,
+      currentPosition: r.latest_position as number,
+      previousPosition: r.previous_position as number,
+      positionChange: (r.latest_position as number) - (r.previous_position as number),
+      latestCheckDate: (r.latest_created_at ?? "").slice(0, 10),
+    }))
+    .sort((a, b) => b.positionChange - a.positionChange);
+}
+
 export async function fetchDecliningPages(
   projectId: string,
   minDrop: number = 3
 ): Promise<PageAuditEntry[]> {
   try {
-    const sb = await getClient();
-
-    const { data: keywords, error: kwErr } = await sb
-      .from("keywords")
-      .select("id, keyword")
-      .eq("project_id", projectId)
-      .limit(500);
-
-    if (kwErr || !keywords || keywords.length === 0) return [];
-
-    const keywordIds = keywords.map((k) => k.id as string);
-
-    // Fetch last 60 days to compare current vs ~30d ago
-    const since = new Date();
-    since.setDate(since.getDate() - 60);
-
-    const { data: rankings, error: rkErr } = await sb
-      .from("rankings")
-      .select("keyword_id, position, check_date, url")
-      .in("keyword_id", keywordIds)
-      .not("position", "is", null)
-      .gte("check_date", since.toISOString().split("T")[0])
-      .order("check_date", { ascending: false });
-
-    if (rkErr || !rankings || rankings.length === 0) return [];
-
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    const cutoffStr = cutoff.toISOString().split("T")[0];
-
-    // Split into recent (last 30d) and older (30-60d ago)
-    const recentRankings = new Map<string, { position: number; date: string; url: string | null }>();
-    const olderRankings = new Map<string, { position: number }>();
-
-    for (const r of rankings) {
-      const kid = r.keyword_id as string;
-      const dateStr = r.check_date as string;
-      if (dateStr >= cutoffStr) {
-        if (!recentRankings.has(kid)) {
-          recentRankings.set(kid, {
-            position: r.position as number,
-            date: dateStr,
-            url: (r.url as string) ?? null,
-          });
-        }
-      } else {
-        if (!olderRankings.has(kid)) {
-          olderRankings.set(kid, { position: r.position as number });
-        }
-      }
-    }
-
-    const kwMap = new Map(keywords.map((k) => [k.id as string, k.keyword as string]));
-
-    return Array.from(recentRankings.entries())
-      .filter(([kid, recent]) => {
-        const older = olderRankings.get(kid);
-        if (!older) return false;
-        return recent.position - older.position >= minDrop;
-      })
-      .map(([kid, recent]) => {
-        const older = olderRankings.get(kid)!;
-        return {
-          keywordId: kid,
-          keyword: kwMap.get(kid) ?? "unknown",
-          url: recent.url,
-          currentPosition: recent.position,
-          previousPosition: older.position,
-          positionChange: recent.position - older.position,
-          latestCheckDate: recent.date,
-        };
-      })
-      .sort((a, b) => b.positionChange - a.positionChange);
+    return toDecliningPages(await fetchKeywordRankings(projectId), minDrop);
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error(`Network error fetching declining pages: ${String(err)}`);
+  }
+}
+
+// ---- Weekly readout ----
+
+/**
+ * The document Ezeo composes for each active project every Monday 12:00 UTC
+ * (`project_weekly_readouts`, EZE-1550): regressions, quick wins, GEO
+ * movement and CRO signals, each section carrying its own coverage.
+ *
+ * Columns are named on purpose. A client's grant on this table excludes
+ * `error` (raw provider strings), so `select('*')` fails for them with 42501.
+ */
+export interface WeeklyReadout {
+  id: string;
+  week_start: string;
+  generated_at: string;
+  status: string;
+  markdown: string;
+  coverage: unknown;
+}
+
+export async function fetchWeeklyReadout(
+  projectId: string,
+  weekStart?: string
+): Promise<WeeklyReadout | null> {
+  try {
+    const sb = await getClient();
+    let q = sb
+      .from("project_weekly_readouts")
+      .select("id, week_start, generated_at, status, markdown, coverage")
+      .eq("project_id", projectId);
+    if (weekStart) q = q.eq("week_start", weekStart);
+    const { data, error } = await q
+      .order("week_start", { ascending: false })
+      .order("generated_at", { ascending: false })
+      .limit(1);
+    if (error) throw new Error(`Readout query failed: ${error.message}`);
+    return ((data ?? [])[0] as WeeklyReadout | undefined) ?? null;
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error(`Network error fetching weekly readout: ${String(err)}`);
   }
 }
