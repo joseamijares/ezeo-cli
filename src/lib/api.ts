@@ -19,6 +19,11 @@ import {
   type KeywordRankingRow,
   type RankingsSummaryAggregate,
 } from "./metrics.js";
+import {
+  clampRequestCount,
+  requestArticlesErrorCopy,
+  type RequestArticlesResult,
+} from "./articles.js";
 
 let client: SupabaseClient | null = null;
 
@@ -691,4 +696,60 @@ export async function fetchWeeklyReadout(
     if (err instanceof Error) throw err;
     throw new Error(`Network error fetching weekly readout: ${String(err)}`);
   }
+}
+
+// ---- Articles ----
+
+export interface ArticleRow {
+  id: string;
+  title: string;
+  status: string;
+  target_keyword: string | null;
+  word_count: number | null;
+  qa_score: number | null;
+  published_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchArticles(
+  projectId: string,
+  opts: { status?: string; limit?: number } = {}
+): Promise<ArticleRow[]> {
+  try {
+    const sb = await getClient();
+    let q = sb
+      .from("content_articles")
+      .select(
+        "id, title, status, target_keyword, word_count, qa_score, published_url, created_at, updated_at"
+      )
+      .eq("project_id", projectId);
+    if (opts.status) q = q.eq("status", opts.status);
+    const { data, error } = await q
+      .order("updated_at", { ascending: false })
+      .limit(Math.min(Math.max(opts.limit ?? 20, 1), 100));
+    if (error) throw new Error(`Articles query failed: ${error.message}`);
+    return (data ?? []) as ArticleRow[];
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error(`Network error fetching articles: ${String(err)}`);
+  }
+}
+
+/**
+ * Start up to `count` article runs for the CURRENT ISO week. Each new run
+ * consumes one weekly allowance or pay-per-work credit; the server enforces
+ * both. Refusals come back as the RPC's own sentence.
+ */
+export async function requestArticles(
+  projectId: string,
+  count: number
+): Promise<RequestArticlesResult> {
+  const sb = await getClient();
+  const { data, error } = await sb.rpc("request_content_articles", {
+    p_project_id: projectId,
+    p_count: clampRequestCount(count),
+  });
+  if (error) throw new Error(requestArticlesErrorCopy(error.message));
+  return (data ?? {}) as RequestArticlesResult;
 }

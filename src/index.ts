@@ -16,6 +16,7 @@ import { apiKeyCreateCommand, apiKeyListCommand, apiKeyRevokeCommand } from "./c
 import { reportCommand } from "./commands/report.js";
 import { alertsCommand } from "./commands/alerts.js";
 import { readoutCommand } from "./commands/readout.js";
+import { articlesListCommand, articlesRequestCommand } from "./commands/articles.js";
 import { geoCommand } from "./commands/geo.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { keywordsCommand } from "./commands/keywords.js";
@@ -207,6 +208,39 @@ Examples:
   )
   .action((project: string | undefined, opts: { week?: string; json?: boolean }) =>
     readoutCommand(project, opts)
+  );
+
+// ---- articles ----
+const articles = program
+  .command("articles")
+  .description("List articles and start new ones through Ezeo's content pipeline");
+
+articles
+  .command("list [project]")
+  .description("Recent articles and their status")
+  .option("--status <status>", "draft | in_review | revision_requested | approved | published | archived")
+  .option("--limit <n>", "How many (default 20, max 100)")
+  .option("--json", "Output as JSON")
+  .action((project: string | undefined, opts: { status?: string; limit?: string; json?: boolean }) =>
+    articlesListCommand(project, opts)
+  );
+
+articles
+  .command("request [project]")
+  .description("Start articles for this week from the top-ranked topics (uses allowance or credits)")
+  .option("-n, --count <n>", "How many (default 1, max 10 per request)")
+  .option("-y, --yes", "Skip the confirmation prompt")
+  .option("--json", "Output as JSON (requires --yes)")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  ezeo articles request wendella        # Asks before starting 1 article
+  ezeo articles request aqua -n 3       # Asks before starting 3
+  ezeo articles request aqua -n 2 --yes # No prompt (scripts, CI)`
+  )
+  .action((project: string | undefined, opts: { count?: string; yes?: boolean; json?: boolean }) =>
+    articlesRequestCommand(project, opts)
   );
 
 // ---- alerts ----
