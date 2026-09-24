@@ -16,11 +16,15 @@ export function isMondayIsoDate(value: string): boolean {
   return d.getUTCDay() === 1;
 }
 
-function pickProject(projects: Project[], searchName?: string): Project | undefined {
+/** Exact name or domain first, so `acme.com` never resolves to `old-acme.com`. */
+export function pickProject(projects: Project[], searchName?: string): Project | undefined {
   if (searchName) {
     const needle = searchName.toLowerCase();
-    return projects.find(
-      (p) => p.name.toLowerCase().includes(needle) || p.domain?.toLowerCase().includes(needle)
+    return (
+      projects.find((p) => p.name.toLowerCase() === needle || p.domain?.toLowerCase() === needle) ??
+      projects.find(
+        (p) => p.name.toLowerCase().includes(needle) || p.domain?.toLowerCase().includes(needle)
+      )
     );
   }
   const defaultId = config.get("defaultProject");
