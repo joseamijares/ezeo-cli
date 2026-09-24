@@ -17,7 +17,11 @@ export function isMondayIsoDate(value: string): boolean {
 }
 
 /** Exact name or domain first, so `acme.com` never resolves to `old-acme.com`. */
-export function pickProject(projects: Project[], searchName?: string): Project | undefined {
+export function pickProject(
+  projects: Project[],
+  searchName?: string,
+  { fallbackToFirst = true }: { fallbackToFirst?: boolean } = {}
+): Project | undefined {
   if (searchName) {
     const needle = searchName.toLowerCase();
     return (
@@ -28,7 +32,8 @@ export function pickProject(projects: Project[], searchName?: string): Project |
     );
   }
   const defaultId = config.get("defaultProject");
-  return (defaultId && projects.find((p) => p.id === defaultId)) || projects[0];
+  const byDefault = defaultId ? projects.find((p) => p.id === defaultId) : undefined;
+  return byDefault ?? (fallbackToFirst ? projects[0] : undefined);
 }
 
 /**

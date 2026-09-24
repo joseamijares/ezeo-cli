@@ -2,7 +2,7 @@ import chalk from "chalk";
 import ora from "ora";
 import inquirer from "inquirer";
 import { fetchArticles, fetchProjects, requestArticles } from "../lib/api.js";
-import { clampRequestCount, summarizeRequestArticles } from "../lib/articles.js";
+import { clampRequestCount, parseRequestCount, summarizeRequestArticles } from "../lib/articles.js";
 import { formatError } from "../lib/formatter.js";
 import { getGlobalOpts } from "../lib/globals.js";
 import { pickProject } from "./readout.js";
@@ -20,11 +20,23 @@ const STATUS_COLOR: Record<string, (s: string) => string> = {
   archived: chalk.dim,
 };
 
-async function resolveProject(spinner: ReturnType<typeof ora>, name?: string) {
+async function resolveProject(
+  spinner: ReturnType<typeof ora>,
+  name?: string,
+  { requireChosen = false }: { requireChosen?: boolean } = {}
+) {
   const projects = await fetchProjects();
-  const project = pickProject(projects, name ?? getGlobalOpts().project);
+  const wanted = name ?? getGlobalOpts().project;
+  // An unattended paid request must never land on "whichever project is first".
+  const project = pickProject(projects, wanted, { fallbackToFirst: !requireChosen });
   if (!project) {
-    spinner.fail(name ? `Project "${name}" not found` : "No projects found");
+    spinner.fail(
+      wanted
+        ? `Project "${wanted}" not found`
+        : requireChosen && projects.length > 0
+          ? "Name a project (or set a default with `ezeo projects use`) before using --yes"
+          : "No projects found"
+    );
     if (projects.length > 0) {
       console.log(chalk.gray(`  Available: ${projects.map((p) => p.name).join(", ")}`));
     }
@@ -87,10 +99,13 @@ export async function articlesRequestCommand(
   const useJson = opts.json || getGlobalOpts().json;
   const spinner = ora("Resolving project...").start();
   try {
-    const project = await resolveProject(spinner, projectName);
+    const asked = parseRequestCount(opts.count);
+    if (asked === null) {
+      spinner.fail(`--count must be a whole number of 1 or more (got "${opts.count}")`);
+      process.exit(1);
+    }
+    const project = await resolveProject(spinner, projectName, { requireChosen: !!opts.yes });
     spinner.stop();
-
-    const asked = opts.count ? parseInt(opts.count, 10) : 1;
     const count = clampRequestCount(asked);
 
     if (!opts.yes) {

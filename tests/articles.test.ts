@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   clampRequestCount,
+  parseRequestCount,
   requestArticlesErrorCopy,
   summarizeRequestArticles,
 } from "../src/lib/articles.js";
@@ -50,5 +51,19 @@ describe("summarizeRequestArticles", () => {
     const s = summarizeRequestArticles({ ok: false, reason: "no_cycle", detail: { why: "x" } });
     expect(s.headline).toMatch(/No topics could be prepared/);
     expect(s.details[0]).toContain('{"why":"x"}');
+  });
+});
+
+describe("parseRequestCount", () => {
+  it("defaults to 1 and accepts positive whole numbers", () => {
+    expect(parseRequestCount(undefined)).toBe(1);
+    expect(parseRequestCount("3")).toBe(3);
+    expect(parseRequestCount(" 12 ")).toBe(12);
+  });
+
+  it("rejects zero, negatives, fractions and text instead of clamping them to 1", () => {
+    for (const bad of ["0", "-2", "1.5", "abc", "", "3x"]) {
+      expect(parseRequestCount(bad)).toBeNull();
+    }
   });
 });

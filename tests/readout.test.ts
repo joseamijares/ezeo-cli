@@ -34,4 +34,10 @@ describe("pickProject", () => {
     const projects = [mk("Wendella Boats", "wendellaboats.com")];
     expect(pickProject(projects, "WENDELLA")?.name).toBe("Wendella Boats");
   });
+
+  it("does not fall back to the first project when asked not to", () => {
+    const projects = [mk("Acme", "acme.com")];
+    expect(pickProject(projects, undefined, { fallbackToFirst: false })).toBeUndefined();
+    expect(pickProject(projects, "acme", { fallbackToFirst: false })?.name).toBe("Acme");
+  });
 });

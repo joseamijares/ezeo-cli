@@ -37,6 +37,19 @@ export function clampRequestCount(requested: number): number {
   return Math.min(Math.max(Math.floor(requested) || 1, 1), REQUEST_ARTICLES_RPC_MAX);
 }
 
+/**
+ * Parse `--count`. Missing means 1. Anything that is not a positive whole
+ * number is rejected (null) rather than clamped, because clamping `0` or
+ * `abc` up to 1 would start a paid article nobody asked for.
+ */
+export function parseRequestCount(raw: string | undefined): number | null {
+  if (raw === undefined) return 1;
+  const text = raw.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const n = Number(text);
+  return n >= 1 ? n : null;
+}
+
 /** Postgres RAISE text without the `function_name: ` prefixes (up to 3 deep). */
 export function requestArticlesErrorCopy(message: string): string {
   let text = message.trim();
