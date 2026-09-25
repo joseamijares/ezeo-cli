@@ -4,7 +4,7 @@
 > MCP server live in the main repository at
 > [`EZEO_JAMAK_SEO/ezeo-cli`](https://github.com/joseamijares/EZEO_JAMAK_SEO/tree/main/ezeo-cli).
 > This repository gets no new features. It was never published to npm, so the
-> `npm i -g ezeo` instructions below do not work.
+> `npm i -g ezeo` and `npx ezeo` instructions below do not work.
 
 **Talk to your SEO data.** The first conversational CLI for SEO and AI visibility.
 

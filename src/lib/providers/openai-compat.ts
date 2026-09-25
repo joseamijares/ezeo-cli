@@ -114,6 +114,10 @@ export async function agentTurnWithOpenAICompat(
         name: tc.function.name,
         arguments: JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>,
       }));
+    if (toolCalls.length === 0) {
+      if (!text) throw new Error('Unsupported tool call with no assistant content');
+      return { text, toolCalls, stopReason: 'end_turn' };
+    }
     return { text, toolCalls, stopReason: 'tool_use' };
   }
 

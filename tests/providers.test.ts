@@ -292,6 +292,50 @@ describe("agentTurnWithOpenAICompat", () => {
     expect(result.toolCalls).toEqual([{ id: "call_fn", name: "get_data", arguments: {} }]);
   });
 
+  it("ends the turn with text when only custom tool calls are returned", async () => {
+    mockOpenAICreate.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: "Here is the answer",
+            tool_calls: [{ id: "call_custom", type: "custom", custom: { name: "grammar", input: "x" } }],
+          },
+          finish_reason: "tool_calls",
+        },
+      ],
+    });
+
+    const result = await agentTurnWithOpenAICompat(
+      [{ role: "user", content: "test" }],
+      tools,
+      { apiKey: "key", baseUrl: "https://api.minimax.chat/v1", model: "MiniMax-M1" }
+    );
+
+    expect(result).toEqual({ text: "Here is the answer", toolCalls: [], stopReason: "end_turn" });
+  });
+
+  it("throws when only custom tool calls are returned with no content", async () => {
+    mockOpenAICreate.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: null,
+            tool_calls: [{ id: "call_custom", type: "custom", custom: { name: "grammar", input: "x" } }],
+          },
+          finish_reason: "tool_calls",
+        },
+      ],
+    });
+
+    await expect(
+      agentTurnWithOpenAICompat(
+        [{ role: "user", content: "test" }],
+        tools,
+        { apiKey: "key", baseUrl: "https://api.minimax.chat/v1", model: "MiniMax-M1" }
+      )
+    ).rejects.toThrow("Unsupported tool call with no assistant content");
+  });
+
   it("throws when API returns no choices", async () => {
     mockOpenAICreate.mockResolvedValueOnce({ choices: [] });
 
