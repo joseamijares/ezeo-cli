@@ -107,11 +107,17 @@ export async function agentTurnWithOpenAICompat(
   const text = message.content ?? '';
 
   if (choice.finish_reason === 'tool_calls' && message.tool_calls && message.tool_calls.length > 0) {
-    const toolCalls = message.tool_calls.map((tc) => ({
-      id: tc.id,
-      name: tc.function.name,
-      arguments: JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>,
-    }));
+    const toolCalls = message.tool_calls
+      .filter((tc) => tc.type === 'function')
+      .map((tc) => ({
+        id: tc.id,
+        name: tc.function.name,
+        arguments: JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>,
+      }));
+    if (toolCalls.length === 0) {
+      if (!text) throw new Error('Unsupported tool call with no assistant content');
+      return { text, toolCalls, stopReason: 'end_turn' };
+    }
     return { text, toolCalls, stopReason: 'tool_use' };
   }
 
@@ -124,22 +130,22 @@ export async function agentTurnWithOpenAICompat(
  */
 export function toOpenAITool(anthropicTool: {
   name: string;
-  description: string;
+  description?: string;
   input_schema: {
     type: 'object';
-    properties: Record<string, unknown>;
-    required: string[];
+    properties?: unknown;
+    required?: string[] | null;
   };
 }): ToolDefinition {
   return {
     type: 'function',
     function: {
       name: anthropicTool.name,
-      description: anthropicTool.description,
+      description: anthropicTool.description ?? '',
       parameters: {
         type: 'object',
-        properties: anthropicTool.input_schema.properties,
-        required: anthropicTool.input_schema.required,
+        properties: (anthropicTool.input_schema.properties ?? {}) as Record<string, unknown>,
+        required: anthropicTool.input_schema.required ?? [],
       },
     },
   };

@@ -22,7 +22,7 @@ export function addUserMessage(session: AgentSession, content: string): void {
 
 export function addAssistantMessage(
   session: AgentSession,
-  content: Anthropic.ContentBlock[]
+  content: Anthropic.ContentBlockParam[]
 ): void {
   session.messages.push({ role: "assistant", content });
 }
